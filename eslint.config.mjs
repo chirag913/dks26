@@ -1,37 +1,37 @@
 // eslint.config.mjs
-import eslintRecommended from "eslint-config-standard-with-typescript";
-import js from "eslint-plugin-import";
-import react from "eslint-plugin-react";
-
 export default {
   root: true,
-  // Use Next.js recommended base; keep core-web-vitals
-  extends: ["next", "next/core-web-vitals"],
-  // Use parser options for TS
+  parser: '@typescript-eslint/parser',
   parserOptions: {
-    ecmaVersion: "latest",
-    sourceType: "module",
-    project: "./tsconfig.json",
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+    project: './tsconfig.json'
   },
+  plugins: ['@typescript-eslint', 'react', 'react-hooks'],
+  ignores: ['node_modules', '.next', 'public'],
+  env: {
+    browser: true,
+    es2021: true,
+    node: true
+  },
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'plugin:react/recommended',
+    'plugin:react-hooks/recommended'
+  ],
   rules: {
-    // Temporarily relax strict rules so build can pass.
-    // Turn off explicit-any complaints (we'll fix types later).
-    "@typescript-eslint/no-explicit-any": "off",
-
-    // Allow some looser React rules that currently block build
-    "react/no-unescaped-entities": "off",
-    "react-hooks/exhaustive-deps": "off",
-
-    // Keep other rules as warnings rather than errors
-    "@typescript-eslint/ban-ts-comment": "warn",
-    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
-
-    // Next.js wants some rules; keep them but as warnings
-    "no-console": "warn"
+    // temporary relaxations so build passes
+    '@typescript-eslint/no-explicit-any': 'off',
+    'react/no-unescaped-entities': 'off',
+    'react-hooks/exhaustive-deps': 'off',
+    '@typescript-eslint/ban-ts-comment': 'warn',
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    'no-console': 'warn'
   },
   settings: {
     react: {
-      version: "detect"
+      version: 'detect'
     }
   }
-};
+}
