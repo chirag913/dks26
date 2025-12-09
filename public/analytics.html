@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KillSwitch Pro Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen p-8">
+        <!-- Header -->
+        <div class="mb-8 flex items-center justify-between">
+            <div>
+                <a href="/dashboard" class="text-gray-600 hover:text-gray-900 mb-2 inline-flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to Dashboard
+                </a>
+                <h1 class="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Total Users</h3>
+                <p id="totalUsers" class="text-3xl font-bold text-gray-900">Loading...</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Total Subscriptions</h3>
+                <p id="totalSubscriptions" class="text-3xl font-bold text-gray-900">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white rounded-lg shadow">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Signups</h3>
+                    <div id="recentSignups" class="space-y-4">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Recent Subscriptions</h3>
+                    <div id="recentSubscriptions" class="space-y-4">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'your-supabase-url';
+        const SUPABASE_ANON_KEY = 'your-supabase-anon-key';
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function fetchAnalytics() {
+            try {
+                // Check admin status
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user || user.email !== 'sharma.chirag913@gmail.com') {
+                    window.location.href = '/dashboard';
+                    return;
+                }
+
+                // Fetch users
+                const { data: users, error: usersError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (usersError) throw usersError;
+
+                // Fetch subscriptions
+                const { data: subscriptions, error: subsError } = await supabase
+                    .from('subscriptions')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (subsError) throw subsError;
+
+                // Update UI
+                document.getElementById('totalUsers').textContent = users.length;
+                document.getElementById('totalSubscriptions').textContent = subscriptions.length;
+
+                // Update recent signups
+                const signupsHtml = users.slice(0, 5).map(user => `
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">${user.email}</p>
+                            <p class="text-sm text-gray-500">${new Date(user.created_at).toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                `).join('');
+                document.getElementById('recentSignups').innerHTML = signupsHtml;
+
+                // Update recent subscriptions
+                const subscriptionsHtml = subscriptions.slice(0, 5).map(sub => `
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">₹${(sub.total_amount / 100).toFixed(2)}</p>
+                            <p class="text-sm text-gray-500">${new Date(sub.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <span class="px-2 py-1 text-xs rounded-full ${
+                            sub.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }">
+                            ${sub.status}
+                        </span>
+                    </div>
+                `).join('');
+                document.getElementById('recentSubscriptions').innerHTML = subscriptionsHtml;
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error loading analytics data');
+            }
+        }
+
+        fetchAnalytics();
+    </script>
+</body>
+</html>

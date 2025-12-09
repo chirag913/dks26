@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/cron/threshold",
+      "schedule": "*/1 9-15 * * 1-5"
+    }
+  ]
+}
