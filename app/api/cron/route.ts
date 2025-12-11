@@ -1,4 +1,3 @@
-// app/api/cron/route.ts
 export const runtime = 'nodejs' // ensure server runtime for supabase-js and node APIs
 
 import { NextResponse } from 'next/server'
@@ -47,8 +46,8 @@ export async function POST() {
         const dhan = createDhan(cfg.api_key)
 
         // 1) Get positions and orders
-        const positions = (await dhan.getPositions()) || []
-        const orders = (await dhan.getOrders()) || []
+        const positions = (await (dhan as any).getPositions()) || []
+        const orders = (await (dhan as any).getOrders()) || []
 
         // 2) Compute total PnL and completed orders
         const totalPnL = positions.reduce(
@@ -85,7 +84,12 @@ export async function POST() {
             try {
               // if your dhan client exposes exitPosition, call it; otherwise attempt placeOrder / close
               if (typeof (dhan as any).exitPosition === 'function') {
-                await (dhan as any).exitPosition(pos)
+                try {
+                  await (dhan as any).exitPosition(pos)
+                } catch (err) {
+                  console.warn('exitPosition failed for user', cfg.user_id, { pos, errMessage: (err as any)?.message ?? String(err) })
+                  userReport.errors.push({ stage: 'exitPosition', error: String(err), pos })
+                }
               } else if (typeof (dhan as any).placeOrder === 'function') {
                 // fallback: place a market order opposite to netQty (best-effort)
                 const qty = Number(pos.netQty ?? pos.net_qty ?? 0)
@@ -97,16 +101,20 @@ export async function POST() {
                   orderType: 'MARKET',
                   quantity: Math.abs(qty)
                 }
+
+                // Attempt placeOrder and record/log on failure (do not throw to stop processing other users)
                 try {
                   await (dhan as any).placeOrder(orderBody)
-                } catch (e) {
-                  throw e
+                } catch (err) {
+                  console.warn('placeOrder failed for user', cfg.user_id, { orderBody, errMessage: (err as any)?.message ?? String(err) })
+                  userReport.errors.push({ stage: 'placeOrder', error: String(err), orderBody })
                 }
               } else {
-                throw new Error('No exitPosition/placeOrder method on dhan client')
+                console.warn('No exitPosition/placeOrder method on dhan client for user', cfg.user_id)
+                userReport.errors.push({ stage: 'exit', error: 'No exitPosition/placeOrder method on dhan client' })
               }
             } catch (err) {
-              console.warn('exitPosition error for user', cfg.user_id, err)
+              console.warn('exitPosition general error for user', cfg.user_id, err)
               userReport.errors.push({ stage: 'exitPosition', error: String(err) })
             }
           }
@@ -122,9 +130,14 @@ export async function POST() {
               if (!id) {
                 throw new Error('order id missing')
               }
-              await dhan.cancelOrder(id)
+              try {
+                await (dhan as any).cancelOrder(id)
+              } catch (err) {
+                console.warn('cancelOrder error for user', cfg.user_id, { id, errMessage: (err as any)?.message ?? String(err) })
+                userReport.errors.push({ stage: 'cancelOrder', error: String(err), id })
+              }
             } catch (err) {
-              console.warn('cancelOrder error for user', cfg.user_id, err)
+              console.warn('cancelOrder error (id missing) for user', cfg.user_id, err)
               userReport.errors.push({ stage: 'cancelOrder', error: String(err) })
             }
           }
@@ -132,16 +145,26 @@ export async function POST() {
           // Step C: kill-switch activation sequence (activate -> deactivate -> activate)
           try {
             if (typeof (dhan as any).activateKillSwitch === 'function' && typeof (dhan as any).deactivateKillSwitch === 'function') {
-              await (dhan as any).activateKillSwitch()
-              await new Promise((r) => setTimeout(r, 2000))
-              await (dhan as any).deactivateKillSwitch()
-              await new Promise((r) => setTimeout(r, 2000))
-              await (dhan as any).activateKillSwitch()
+              try {
+                await (dhan as any).activateKillSwitch()
+                await new Promise((r) => setTimeout(r, 2000))
+                await (dhan as any).deactivateKillSwitch()
+                await new Promise((r) => setTimeout(r, 2000))
+                await (dhan as any).activateKillSwitch()
+              } catch (err) {
+                console.warn('kill-switch sequence internal error for user', cfg.user_id, err)
+                userReport.errors.push({ stage: 'killSwitchSequence', error: String(err) })
+              }
             } else if (typeof (dhan as any).triggerKill === 'function') {
-              // fallback to single trigger call if activate/deactivate not available
-              await (dhan as any).triggerKill({ reason: 'CRON_KILL_SEQUENCE' })
+              try {
+                await (dhan as any).triggerKill({ reason: 'CRON_KILL_SEQUENCE' })
+              } catch (err) {
+                console.warn('triggerKill error for user', cfg.user_id, err)
+                userReport.errors.push({ stage: 'triggerKill', error: String(err) })
+              }
             } else {
-              throw new Error('killswitch methods not available on dhan client')
+              console.warn('killswitch methods not available on dhan client for user', cfg.user_id)
+              userReport.errors.push({ stage: 'killSwitch', error: 'killswitch methods not available' })
             }
           } catch (err) {
             console.warn('kill-switch sequence error for user', cfg.user_id, err)

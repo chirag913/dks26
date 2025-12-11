@@ -11,34 +11,38 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "react-jsx",
+
+    // REQUIRED by Next.js (Next automatically handles JSX transform)
+    "jsx": "preserve",
+
     "incremental": true,
     "baseUrl": ".",
     "noImplicitAny": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+
+    // Ensure JSX types exist
     "types": ["react", "react-dom"],
-    "typeRoots": ["./types", "./node_modules/@types"],
+
     "plugins": [{ "name": "next" }],
+
     "paths": {
       "@/*": ["./*"],
       "@/components/*": ["components/*"],
       "@components/*": ["components/*"]
     }
   },
+
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     "**/*.jsx",
     ".next/types/**/*.ts",
-    "app/**/*.ts",
-    "app/**/*.tsx",
-    "components/**/*.ts",
-    "components/**/*.tsx",
-    "components/**/*.jsx",
-    "components/TradingConfigForm.tsx",
+    "app/**/*",
+    "components/**/*",
     "types/**/*.d.ts"
   ],
+
   "exclude": ["node_modules", ".next", "out"]
 }
