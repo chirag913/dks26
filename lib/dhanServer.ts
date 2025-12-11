@@ -105,41 +105,37 @@ function buildDhanClient(accessToken: string | null | undefined) {
      * (e.g. instrument_token vs tradingSymbol, product, order_type, exchange, etc.)
      */
     async exitPosition(pos: AnyObj): Promise<any> {
-      try {
-        // derive quantity (try a few common field names)
-        const qty =
-          Math.abs(Number(pos.netQty ?? pos.net_qty ?? pos.quantity ?? pos.qty ?? pos.volume ?? 0)) || 0
-        if (!qty || qty <= 0) {
-          throw new Error('Cannot determine position quantity for exit')
-        }
-
-        // derive symbol/trading token
-        const symbol =
-          pos.tradingSymbol ?? pos.symbol ?? pos.instrument ?? pos.instrumentToken ?? pos.instrument_token ?? null
-        if (!symbol) {
-          throw new Error('Cannot determine instrument/symbol for exit')
-        }
-
-        // determine side: if netQty positive -> SELL to exit; if negative -> BUY to exit
-        const net = Number(pos.netQty ?? pos.net_qty ?? pos.quantity ?? pos.qty ?? 0) || 0
-        const side = net > 0 ? 'SELL' : 'BUY'
-
-        // build a conservative market order body. Adapt to your broker if necessary.
-        const orderBody: AnyObj = {
-          tradingSymbol: symbol,
-          quantity: qty,
-          orderType: 'MARKET',
-          product: pos.product ?? 'MIS', // keep MIS as default; change if you need CNC or NRML
-          side, // SELL or BUY
-          // you may need to add exchange/variety/validity depending on Dhan API
-        }
-
-        // Call placeOrder — if your broker expects different field names, change orderBody above.
-        return await this.placeOrder(orderBody)
-      } catch (e) {
-        // rethrow so callers can record failure
-        throw e
+      // removed unnecessary try/catch that only rethrew (ESLint no-useless-catch)
+      // derive quantity (try a few common field names)
+      const qty =
+        Math.abs(Number(pos.netQty ?? pos.net_qty ?? pos.quantity ?? pos.qty ?? pos.volume ?? 0)) || 0
+      if (!qty || qty <= 0) {
+        throw new Error('Cannot determine position quantity for exit')
       }
+
+      // derive symbol/trading token
+      const symbol =
+        pos.tradingSymbol ?? pos.symbol ?? pos.instrument ?? pos.instrumentToken ?? pos.instrument_token ?? null
+      if (!symbol) {
+        throw new Error('Cannot determine instrument/symbol for exit')
+      }
+
+      // determine side: if netQty positive -> SELL to exit; if negative -> BUY to exit
+      const net = Number(pos.netQty ?? pos.net_qty ?? pos.quantity ?? pos.qty ?? 0) || 0
+      const side = net > 0 ? 'SELL' : 'BUY'
+
+      // build a conservative market order body. Adapt to your broker if necessary.
+      const orderBody: AnyObj = {
+        tradingSymbol: symbol,
+        quantity: qty,
+        orderType: 'MARKET',
+        product: pos.product ?? 'MIS', // keep MIS as default; change if you need CNC or NRML
+        side, // SELL or BUY
+        // you may need to add exchange/variety/validity depending on Dhan API
+      }
+
+      // Call placeOrder — if your broker expects different field names, change orderBody above.
+      return await this.placeOrder(orderBody)
     }
   }
 }
