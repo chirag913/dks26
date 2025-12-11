@@ -1,3 +1,4 @@
+// components/Sidebar.tsx
 'use client'
 
 import React, { useState, useCallback, useEffect } from 'react'
@@ -213,6 +214,37 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
     setError(null)
   }, [])
 
+  // Fallback verification: try server proxy endpoint with x-dhan-token header.
+  // This is pragmatic: many broker validate endpoints are flaky; this mirrors actual usage.
+  async function fallbackVerifyWithPositions(token: string) {
+    try {
+      const res = await fetch('/api/dhan/positions', {
+        method: 'GET',
+        headers: {
+          'x-dhan-token': token
+        }
+      })
+      if (res.ok) return true
+
+      // if status 401 or 498 -> invalid
+      if (res.status === 401 || res.status === 498) return false
+
+      // try to parse body for clues
+      const j = await res.json().catch(() => null)
+      const txt = JSON.stringify(j ?? '')
+      if (txt.includes('Invalid_Authentication') || txt.includes('DH-901') || txt.toLowerCase().includes('invalid')) {
+        return false
+      }
+
+      // otherwise treat as invalid (safer)
+      return false
+    } catch (e) {
+      // network or CORS — treat as failed verification
+      console.warn('fallbackVerifyWithPositions failed:', e)
+      return false
+    }
+  }
+
   const handleSaveApiKey = async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault()
@@ -223,11 +255,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
     setMessage(null)
 
     try {
-      if (!apiKey.trim()) throw new Error('API key cannot be empty')
+      const trimmed = apiKey.trim()
+      if (!trimmed) throw new Error('API key cannot be empty')
 
-      // quick local validation (you keep this util)
-      const isValid = await validateApiKey(apiKey)
-      if (!isValid) throw new Error('Invalid API key')
+      // quick local validation (calls your utils/api.validateApiKey)
+      let isValid = await validateApiKey(trimmed)
+
+      // If initial validation returned false, attempt pragmatic fallback test
+      if (!isValid) {
+        const fallbackOk = await fallbackVerifyWithPositions(trimmed)
+        if (fallbackOk) {
+          isValid = true
+        } else {
+          // final: invalid token
+          throw new Error(
+            'Invalid API key — the broker rejected the token. If you are sure this token is correct, try regenerating it or contact Dhan support.'
+          )
+        }
+      }
 
       // get user token
       const { data: sessionData } = await supabase.auth.getSession()
@@ -241,7 +286,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ api_key: apiKey })
+        body: JSON.stringify({ api_key: trimmed })
       })
       const json = await res.json()
       if (!res.ok) {
@@ -249,7 +294,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
       }
 
       // succeeded
-      setSavedApiKey(apiKey)
+      setSavedApiKey(trimmed)
       setApiKey('')
       setMessage('API key saved successfully')
       // ensure UI shows latest status
@@ -260,7 +305,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
       }, 1200)
     } catch (err) {
       console.error('API Key Save Error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to save API key')
+      // Friendly messages for known shapes
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('Failed to save API key')
+      }
     } finally {
       setLoading(false)
     }
@@ -378,204 +428,203 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
   )
 
   const renderApiSection = () => (
-  <div className="bg-white p-4 rounded-lg mb-4 border border-gray-100 shadow-sm">
-    <div className="flex items-center mb-3">
-      <Key className="w-4 h-4 mr-2 text-gray-700" />
-      <h3 className="text-sm font-semibold text-gray-900">API Configuration</h3>
-    </div>
+    <div className="bg-white p-4 rounded-lg mb-4 border border-gray-100 shadow-sm">
+      <div className="flex items-center mb-3">
+        <Key className="w-4 h-4 mr-2 text-gray-700" />
+        <h3 className="text-sm font-semibold text-gray-900">API Configuration</h3>
+      </div>
 
-    {/* status badge */}
-    <div className="mb-3">
-      {checkingStatus ? (
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 text-gray-600 text-xs font-medium">
-          <svg className="h-3 w-3 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-          </svg>
-          <span>Checking subscription…</span>
-        </div>
-      ) : status === 'trial-active' ? (
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
-          <Clock className="w-3 h-3" />
-          <div>
-            <div>Trial</div>
-            <div className="text-xs text-gray-500">{endDateIso ? new Date(endDateIso).toLocaleString() : humanRemaining(secondsLeft)}</div>
+      {/* status badge */}
+      <div className="mb-3">
+        {checkingStatus ? (
+          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 text-gray-600 text-xs font-medium">
+            <svg className="h-3 w-3 animate-spin text-gray-500" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+            <span>Checking subscription…</span>
           </div>
-        </div>
-      ) : status === 'active' ? (
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs font-medium">
-          <div>Premium active</div>
-          {endDateIso && <div className="ml-2 text-xs text-gray-500">• {new Date(endDateIso).toLocaleDateString()}</div>}
-        </div>
-      ) : status === 'trial-expired' ? (
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-rose-50 text-rose-700 text-xs font-medium">
-          <AlertCircle className="w-3 h-3" />
-          <span>Trial expired</span>
-        </div>
+        ) : status === 'trial-active' ? (
+          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
+            <Clock className="w-3 h-3" />
+            <div>
+              <div>Trial</div>
+              <div className="text-xs text-gray-500">{endDateIso ? new Date(endDateIso).toLocaleString() : humanRemaining(secondsLeft)}</div>
+            </div>
+          </div>
+        ) : status === 'active' ? (
+          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs font-medium">
+            <div>Premium active</div>
+            {endDateIso && <div className="ml-2 text-xs text-gray-500">• {new Date(endDateIso).toLocaleDateString()}</div>}
+          </div>
+        ) : status === 'trial-expired' ? (
+          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-rose-50 text-rose-700 text-xs font-medium">
+            <AlertCircle className="w-3 h-3" />
+            <span>Trial expired</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 text-gray-600 text-xs">No subscription</div>
+        )}
+      </div>
+
+      {/* API UI */}
+      {savedApiKey ? (
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-600">Status</span>
+            <span className={`text-xs font-medium ${(!subscription && !isApproved) || status === 'trial-expired' ? 'text-red-600' : 'text-green-600'}`}>
+              {((!subscription && !isApproved) || status === 'trial-expired') ? 'Locked' : 'Connected'}
+            </span>
+          </div>
+
+          <div className="mb-3 p-2 bg-gray-50 rounded text-sm overflow-hidden">
+            <p className="truncate text-gray-900 font-mono" title={savedApiKey}>
+              {savedApiKey.substring(0, 16)}...{savedApiKey.slice(-6)}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            {/* Remove is disabled only if user is neither approved nor allowed */}
+            <button
+              onClick={handleRemoveApiKey}
+              disabled={!(isApproved || canEditApi)}
+              className={`flex-1 py-2 rounded-md text-sm transition-colors
+                ${!(isApproved || canEditApi)
+                  ? 'bg-red-300 text-white cursor-not-allowed'
+                  : 'bg-red-500 text-white hover:bg-red-600'}
+              `}
+            >
+              Remove
+            </button>
+
+            {/* Update button: ALWAYS visible. Enabled when approved or canEditApi. Otherwise, opens subscription modal */}
+            <button
+              onClick={() => {
+                if (!(isApproved || canEditApi)) {
+                  setIsSubscriptionModalOpen(true)
+                } else {
+                  setIsModalOpen(true)
+                  setApiKey('')
+                }
+              }}
+              className={`flex-1 py-2 rounded-md text-sm transition-colors border
+                ${!(isApproved || canEditApi)
+                  ? 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}
+              `}
+              aria-disabled={!(isApproved || canEditApi)}
+            >
+              Update
+            </button>
+          </div>
+
+          {!(isApproved || canEditApi) && (
+            <p className="text-xs text-red-600 mt-2 text-center">
+              Subscription required to update API key — <button onClick={() => setIsSubscriptionModalOpen(true)} className="underline">Subscribe</button>
+            </p>
+          )}
+        </>
       ) : (
-        <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-gray-50 text-gray-600 text-xs">No subscription</div>
+        <div>
+          {!canEditApi && !isApproved ? (
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <AlertCircle className="w-4 h-4 text-amber-500" />
+                <p className="text-xs text-gray-600">Premium access required</p>
+              </div>
+              <button
+                onClick={() => setIsSubscriptionModalOpen(true)}
+                className="w-full bg-black text-white py-2 rounded-md text-sm hover:bg-gray-800 transition-colors"
+              >
+                Subscribe / Start Trial
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleApiKeyClick}
+              className={`w-full ${canEditApi || isApproved ? 'bg-black text-white hover:bg-gray-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} py-2 rounded-md text-sm transition-colors`}
+            >
+              {canEditApi || isApproved ? 'Enter API Key' : 'Locked — Subscribe to enable'}
+            </button>
+          )}
+        </div>
       )}
     </div>
+  )
 
-    {/* API UI */}
-    {savedApiKey ? (
-      <>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-600">Status</span>
-          <span className={`text-xs font-medium ${(!subscription && !isApproved) || status === 'trial-expired' ? 'text-red-600' : 'text-green-600'}`}>
-            {((!subscription && !isApproved) || status === 'trial-expired') ? 'Locked' : 'Connected'}
-          </span>
+  const renderSubscriptionSection = () => (
+    <div className="bg-white p-4 rounded-lg mb-4 border border-gray-100 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded bg-indigo-50 text-indigo-600">
+            <CreditCard className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Subscription</h3>
+            <p className="text-xs text-gray-500">Manage plan & billing</p>
+          </div>
         </div>
 
-        <div className="mb-3 p-2 bg-gray-50 rounded text-sm overflow-hidden">
-          <p className="truncate text-gray-900 font-mono" title={savedApiKey}>
-            {savedApiKey.substring(0, 16)}...{savedApiKey.slice(-6)}
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          {/* Remove is disabled only if user is neither approved nor allowed */}
-          <button
-            onClick={handleRemoveApiKey}
-            disabled={!(isApproved || canEditApi)}
-            className={`flex-1 py-2 rounded-md text-sm transition-colors
-              ${!(isApproved || canEditApi)
-                ? 'bg-red-300 text-white cursor-not-allowed'
-                : 'bg-red-500 text-white hover:bg-red-600'}
-            `}
-          >
-            Remove
-          </button>
-
-          {/* Update button: ALWAYS visible. Enabled when approved or canEditApi. Otherwise, opens subscription modal */}
-          <button
-            onClick={() => {
-              if (!(isApproved || canEditApi)) {
-                setIsSubscriptionModalOpen(true)
-              } else {
-                setIsModalOpen(true)
-                setApiKey('')
-              }
-            }}
-            className={`flex-1 py-2 rounded-md text-sm transition-colors border
-              ${!(isApproved || canEditApi)
-                ? 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}
-            `}
-            aria-disabled={!(isApproved || canEditApi)}
-          >
-            Update
-          </button>
-        </div>
-
-        {!(isApproved || canEditApi) && (
-          <p className="text-xs text-red-600 mt-2 text-center">
-            Subscription required to update API key — <button onClick={() => setIsSubscriptionModalOpen(true)} className="underline">Subscribe</button>
-          </p>
-        )}
-      </>
-    ) : (
-      <div>
-        {!canEditApi && !isApproved ? (
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <AlertCircle className="w-4 h-4 text-amber-500" />
-              <p className="text-xs text-gray-600">Premium access required</p>
+        {/* Action button (Manage or Subscribe) */}
+        <div>
+          {isApproved ? (
+            <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
+              Approved User
             </div>
+          ) : subscription ? (
             <button
               onClick={() => setIsSubscriptionModalOpen(true)}
-              className="w-full bg-black text-white py-2 rounded-md text-sm hover:bg-gray-800 transition-colors"
+              className="inline-flex items-center gap-2 px-3 py-1 rounded bg-black text-white text-xs font-medium hover:bg-gray-800"
+            >
+              Manage
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsSubscriptionModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-1 rounded bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
             >
               Subscribe / Start Trial
             </button>
-          </div>
-        ) : (
-          <button
-            onClick={handleApiKeyClick}
-            className={`w-full ${canEditApi || isApproved ? 'bg-black text-white hover:bg-gray-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} py-2 rounded-md text-sm transition-colors`}
-          >
-            {canEditApi || isApproved ? 'Enter API Key' : 'Locked — Subscribe to enable'}
-          </button>
-        )}
-      </div>
-    )}
-  </div>
-)
-
-
-  const renderSubscriptionSection = () => (
-  <div className="bg-white p-4 rounded-lg mb-4 border border-gray-100 shadow-sm">
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded bg-indigo-50 text-indigo-600">
-          <CreditCard className="w-4 h-4" />
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Subscription</h3>
-          <p className="text-xs text-gray-500">Manage plan & billing</p>
+          )}
         </div>
       </div>
 
-      {/* Action button (Manage or Subscribe) */}
-      <div>
+      <div className="pt-2">
         {isApproved ? (
-          <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
-            Approved User
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-600">Access</div>
+              <div className="text-xs font-semibold text-emerald-700">Full access</div>
+            </div>
+            <div className="text-xs text-gray-500">You have been approved for premium features.</div>
           </div>
         ) : subscription ? (
-          <button
-            onClick={() => setIsSubscriptionModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded bg-black text-white text-xs font-medium hover:bg-gray-800"
-          >
-            Manage
-          </button>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-600">Plan</div>
+              <div className="text-xs font-semibold text-green-600">Premium</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-600">Started</div>
+              <div className="text-xs text-gray-700">{new Date(subscription.start_date).toLocaleDateString()}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-600">Renews</div>
+              <div className="text-xs text-gray-700">{new Date(subscription.end_date).toLocaleDateString()}</div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-600">Amount</div>
+              <div className="text-xs text-gray-700">₹{(subscription.total_amount / 100).toFixed(2)}</div>
+            </div>
+          </div>
         ) : (
-          <button
-            onClick={() => setIsSubscriptionModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
-          >
-            Subscribe / Start Trial
-          </button>
+          <div className="text-xs text-gray-600">
+            No active subscription. Start a free 7-day trial or subscribe to unlock all features.
+          </div>
         )}
       </div>
     </div>
-
-    <div className="pt-2">
-      {isApproved ? (
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">Access</div>
-            <div className="text-xs font-semibold text-emerald-700">Full access</div>
-          </div>
-          <div className="text-xs text-gray-500">You have been approved for premium features.</div>
-        </div>
-      ) : subscription ? (
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">Plan</div>
-            <div className="text-xs font-semibold text-green-600">Premium</div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">Started</div>
-            <div className="text-xs text-gray-700">{new Date(subscription.start_date).toLocaleDateString()}</div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">Renews</div>
-            <div className="text-xs text-gray-700">{new Date(subscription.end_date).toLocaleDateString()}</div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">Amount</div>
-            <div className="text-xs text-gray-700">₹{(subscription.total_amount / 100).toFixed(2)}</div>
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-gray-600">
-          No active subscription. Start a free 7-day trial or subscribe to unlock all features.
-        </div>
-      )}
-    </div>
-  </div>
-)
+  )
 
   const renderSidebarContent = () => (
     <>

@@ -1,13 +1,15 @@
 // app/api/cron/threshold/route.ts
-// Protected cron endpoint that triggers the server threshold worker.
-// Vercel (or any external scheduler) should POST to this route with header `x-cron-token: <CRON_SECRET>`.
-
 import { NextResponse } from 'next/server'
 import { runThresholdWorkerBatch } from '../../../../services/thresholdWorker' // <-- correct export name
 
 export async function POST(req: Request) {
   try {
-    const token = req.headers.get('x-cron-token') || ''
+    // Accept either header OR query param (Vercel cron cannot set custom headers)
+    const headerToken = req.headers.get('x-cron-token') || ''
+    // parse url for query param `secret`
+    const url = new URL(req.url)
+    const querySecret = url.searchParams.get('secret') || ''
+
     const secret = process.env.CRON_SECRET || ''
 
     if (!secret) {
@@ -15,13 +17,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'server misconfigured' }, { status: 500 })
     }
 
-    if (!token || token !== secret) {
-      console.warn('[cron/threshold] unauthorized cron call')
+    if (!headerToken && !querySecret) {
+      console.warn('[cron/threshold] missing cron secret (no header and no query)')
+      return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+    }
+
+    if ((headerToken && headerToken !== secret) || (querySecret && querySecret !== secret)) {
+      console.warn('[cron/threshold] unauthorized cron call (secret mismatch)')
       return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
     }
 
     const start = Date.now()
-    const res = await runThresholdWorkerBatch() // call the actual worker entrypoint
+    const res = await runThresholdWorkerBatch()
     const tookMs = Date.now() - start
 
     console.log(`[cron/threshold] finished in ${tookMs}ms`, res?.results ? { processed: (res as any).results.length } : null)

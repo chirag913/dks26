@@ -321,10 +321,13 @@ export default function Dashboard() {
       setMessage('Kill triggered — notifying server and broker...')
 
       try {
-        // FIX: triggerKill only accepts one optional string
-        const resp = await triggerKill(
-          `Client-side threshold | PnL=${pnl} | Orders=${orders}`
-        )
+        // If server supports reading user-saved key (recommended) call:
+const resp = await triggerKill(undefined, {
+  source: 'client',
+  reason: 'Client-side threshold',
+  pnl,
+  orders
+})
 
         setKillSwitchTriggeredToday(true)
         setKillSwitchInfo({
@@ -392,9 +395,9 @@ export default function Dashboard() {
       if (!config.api_key) return
 
       // fetch concurrently via utils/api (expected to accept apiKey)
-    const [positionsRaw, ordersRaw] = await Promise.all([
-  getPositions(),
-  getOrders()
+   const [positionsRaw, ordersRaw] = await Promise.all([
+  getPositions(config.api_key),
+  getOrders(config.api_key)
 ])
 
       const positions = Array.isArray(positionsRaw) ? positionsRaw : []
