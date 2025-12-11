@@ -1,14 +1,15 @@
 // app/reset-password/page.tsx
-import dynamic from 'next/dynamic'
 import React from 'react'
+import ResetPasswordClient from './ResetPasswordClient'
 
 export const metadata = {
   title: 'Reset password',
 }
 
-// dynamic import of client component with SSR disabled to avoid prerender/runtime errors
-const ResetPasswordClient = dynamic(() => import('./ResetPasswordClient'), { ssr: false })
 export default function Page() {
+  // This is a Server Component that directly renders the client component.
+  // ResetPasswordClient is a client component (it has "use client"), so
+  // Next will ship it to the browser and hydrate it there.
   return (
     <main>
       <ResetPasswordClient />
