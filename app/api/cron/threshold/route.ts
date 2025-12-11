@@ -1,4 +1,6 @@
 // app/api/cron/threshold/route.ts
+export const runtime = 'nodejs';  // <-- IMPORTANT LINE
+
 import { NextResponse } from 'next/server'
 import { runThresholdWorkerBatch } from '../../../../services/thresholdWorker' // <-- correct export name
 

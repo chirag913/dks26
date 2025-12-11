@@ -1,4 +1,6 @@
 // app/api/dhan/[...path]/route.ts
+export const runtime = 'nodejs';  // <-- IMPORTANT LINE
+
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(

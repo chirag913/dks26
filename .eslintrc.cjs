@@ -6,6 +6,8 @@ module.exports = {
     project: './tsconfig.json',
     ecmaVersion: 2022,
     sourceType: 'module',
+    // allow the automatic JSX runtime (no need to import React in each file)
+    jsxRuntime: 'automatic'
   },
   env: {
     browser: true,
@@ -26,7 +28,10 @@ module.exports = {
     'react/no-unescaped-entities': 'off',
     'react-hooks/exhaustive-deps': 'off',
     '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-    'no-console': 'warn'
+    'no-console': 'warn',
+
+    // Turn off React-in-jsx-scope rule so JSX works without explicit React import
+    'react/react-in-jsx-scope': 'off'
   },
   settings: {
     react: {

@@ -1,4 +1,5 @@
 // app/api/dhan/orders/route.ts
+export const runtime = 'nodejs';  // <-- IMPORTANT LINE
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'

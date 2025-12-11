@@ -1,4 +1,6 @@
 // app/api/dhan/killswitch/route.ts
+export const runtime = 'nodejs';  // <-- IMPORTANT LINE
+
 import { NextResponse } from 'next/server';
 
 const DHAN_BASE = process.env.DHAN_BASE_URL ?? 'https://api.dhan.co/v2';
