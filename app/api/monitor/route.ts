@@ -1,197 +1,183 @@
 // app/api/monitor/route.ts
-export const runtime = 'nodejs' // ensure full Node runtime for supabase-js
+import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 
-import { createClient } from '@supabase/supabase-js';
-import { NextResponse } from 'next/server';
-
-// Define types for better TypeScript support
 interface UserSettings {
-  id?: string;
-  user_id: string;
-  max_loss?: number | null;
-  max_orders?: number | null;
-  notification_email?: string | null;
-  notification_enabled?: boolean | null;
-  // Add any other settings fields you have
+  id: string
+  user_id: string
+  max_loss?: number
+  max_orders?: number
+  notification_email?: string
+  notification_enabled?: boolean
 }
 
 interface AlertInfo {
-  type: 'max_loss' | 'max_orders' | 'other';
-  message: string;
-  details: Record<string, any>;
+  type: 'max_loss' | 'max_orders' | 'other'
+  message: string
+  details: Record<string, any>
 }
 
-// Create a service role client for monitoring (server runtime required)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+/**
+ * Create supabase client lazily using dynamic import to avoid require() warnings.
+ * Returns null if required env vars are missing (we don't throw at module load time).
+ */
+async function createSupabaseClient() {
+  const { NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env
 
-export async function GET() {
+  if (!NEXT_PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return null
+  }
+
+  // dynamic import (ES module) — eslint-friendly
+  // note: import() returns module namespace; we destructure createClient
+  const supabaseModule = await import('@supabase/supabase-js')
+  const createClient = supabaseModule.createClient as typeof supabaseModule.createClient
+
+  return createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+}
+
+export async function GET(_: NextRequest) {
+  const supabase = await createSupabaseClient()
+  if (!supabase) {
+    return NextResponse.json(
+      { error: 'Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' },
+      { status: 500 }
+    )
+  }
+
   try {
-    // Record heartbeat at the start of each monitoring run
-    const heartbeatTimestamp = new Date().toISOString();
-    await supabase.from('monitoring_heartbeats').insert({
-      timestamp: heartbeatTimestamp,
-      status: 'active',
-      service: 'cron-monitor'
-    });
+    const heartbeatTimestamp = new Date().toISOString()
+    // safe insert (ignore insertion failure but log)
+    try {
+      await supabase.from('monitoring_heartbeats').insert({
+        timestamp: heartbeatTimestamp,
+        status: 'active',
+        service: 'cron-monitor',
+      })
+    } catch (hbErr) {
+      // non-fatal — we continue monitoring even if heartbeat insert fails
+      // eslint-disable-next-line no-console
+      console.error('Heartbeat insert failed', hbErr)
+    }
 
-    // 1. Fetch all active subscriptions
     const { data: subscriptions, error: subError } = await supabase
       .from('subscriptions')
       .select('user_id')
-      .eq('status', 'active');
+      .eq('status', 'active')
 
     if (subError) {
-      console.error('Error fetching subscriptions:', subError);
-      throw subError;
+      throw subError
     }
 
-    // 2. For each user, check their trading conditions
     for (const subscription of subscriptions || []) {
-      if (!subscription || !('user_id' in subscription)) continue;
-
-      // Get user's monitoring settings
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', subscription.user_id)
-        .maybeSingle();
+        .single()
 
-      if (settingsError) {
-        // ignore not found vs real error: log and continue
-        console.warn('Settings fetch error for user', subscription.user_id, settingsError);
-        continue;
+      // PGRST116 is PostgREST "no rows" code — skip when no settings
+      if (settingsError && (settingsError?.code !== 'PGRST116' || !settings)) {
+        // eslint-disable-next-line no-console
+        console.error('Error fetching settings', subscription.user_id, settingsError)
+        continue
       }
+      if (!settings) continue
 
-      const userSettings = settings as UserSettings | null;
-      if (!userSettings) continue; // Skip if no settings
-
-      // Check trading conditions (implement your monitoring logic here)
-      const alertTriggered = await checkTradingConditions(subscription.user_id, userSettings);
-
-      // If alert conditions met, send notification
-      if (alertTriggered) {
-        await sendAlert(subscription.user_id, alertTriggered);
+      const alert = await checkTradingConditions(subscription.user_id, settings as UserSettings, supabase)
+      if (alert) {
+        await sendAlert(subscription.user_id, alert, supabase)
       }
     }
 
-    return NextResponse.json({ success: true, message: 'Monitoring completed' });
+    return NextResponse.json({ success: true, message: 'Monitoring completed' })
   } catch (error) {
-    console.error('Monitoring error:', error);
+    // eslint-disable-next-line no-console
+    console.error('Monitoring error:', error)
     return NextResponse.json(
-      {
-        error: 'Error running monitoring',
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: 'Error running monitoring', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
-    );
+    )
   }
 }
 
-// Implement these functions according to your existing logic
-async function checkTradingConditions(userId: string, settings: UserSettings): Promise<AlertInfo | null> {
-  // Placeholder implementation - replace with your actual monitoring logic
+async function checkTradingConditions(
+  userId: string,
+  settings: UserSettings,
+  supabaseClient: any
+): Promise<AlertInfo | null> {
   try {
-    // 1. Fetch user's trading positions
-    const { data: positions, error: posError } = await supabase
+    const { data: positions, error: posError } = await supabaseClient
       .from('trading_positions')
       .select('*')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
 
-    if (posError) {
-      console.error(`Positions fetch error for user ${userId}:`, posError);
-      throw posError;
-    }
+    if (posError) throw posError
 
-    // 2. Calculate total loss/profit
-    let totalLoss = 0;
-    const totalOrders = positions?.length ?? 0; // <-- changed to const to fix prefer-const error
+    let totalLoss = 0
+    const totalOrders = positions?.length || 0
 
-    (positions || []).forEach((position: any) => {
-      // Calculate profit/loss for each position
-      // This is just an example, replace with your actual calculation fields
-      const current = Number(position.current_value ?? position.currentValue ?? 0);
-      const entry = Number(position.entry_value ?? position.entryValue ?? 0);
-      totalLoss += current - entry;
-    });
+    positions?.forEach((position: any) => {
+      const entry = Number(position.entry_value ?? 0)
+      const current = Number(position.current_value ?? 0)
+      totalLoss += current - entry
+    })
 
-    // 3. Check against thresholds
-    if (typeof settings.max_loss === 'number' && Math.abs(totalLoss) > settings.max_loss) {
+    if (settings.max_loss && Math.abs(totalLoss) > settings.max_loss) {
       return {
         type: 'max_loss',
         message: `Maximum loss threshold of ${settings.max_loss} exceeded`,
-        details: {
-          currentLoss: totalLoss,
-          threshold: settings.max_loss
-        }
-      };
+        details: { currentLoss: totalLoss, threshold: settings.max_loss },
+      }
     }
 
-    if (typeof settings.max_orders === 'number' && totalOrders > settings.max_orders) {
+    if (settings.max_orders && totalOrders > settings.max_orders) {
       return {
         type: 'max_orders',
         message: `Maximum number of orders (${settings.max_orders}) exceeded`,
-        details: {
-          currentOrders: totalOrders,
-          threshold: settings.max_orders
-        }
-      };
+        details: { currentOrders: totalOrders, threshold: settings.max_orders },
+      }
     }
 
-    // No alert conditions met
-    return null;
-  } catch (error) {
-    console.error(`Error checking trading conditions for user ${userId}:`, error);
-    return null;
+    return null
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`Error checking trading conditions for user ${userId}:`, err)
+    return null
   }
 }
 
-async function sendAlert(userId: string, alertInfo: AlertInfo): Promise<void> {
+async function sendAlert(userId: string, alertInfo: AlertInfo, supabaseClient: any): Promise<void> {
   try {
-    // 1. Store the alert in the database
-    await supabase.from('alerts').insert({
+    await supabaseClient.from('alerts').insert({
       user_id: userId,
       type: alertInfo.type,
       message: alertInfo.message,
       details: alertInfo.details,
       status: 'new',
-      created_at: new Date().toISOString()
-    });
+    })
 
-    // 2. Get user's notification preferences
-    const { data: userInfo, error: userError } = await supabase
+    const { data: userInfo, error: userError } = await supabaseClient
       .from('user_settings')
       .select('notification_email, notification_enabled')
       .eq('user_id', userId)
-      .maybeSingle();
+      .single()
 
-    if (userError) {
-      console.warn(`Failed to fetch user notification settings for ${userId}:`, userError);
-      return;
+    if (userError || !userInfo || !userInfo.notification_enabled) {
+      return
     }
 
-    if (!userInfo || !userInfo.notification_enabled) {
-      // notifications disabled or no email configured
-      return;
-    }
+    // eslint-disable-next-line no-console
+    console.log(`Would send email to ${userInfo.notification_email}: ${alertInfo.message}`)
 
-    const email = userInfo.notification_email;
-    if (!email) return;
-
-    // 3. Send email notification (placeholder)
-    console.log(`Would send email to ${email}: ${alertInfo.message}`);
-
-    // 4. Update alert as notified (mark existing 'new' alerts for this user/type as 'notified')
-    await supabase
+    await supabaseClient
       .from('alerts')
-      .update({ status: 'notified', notified_at: new Date().toISOString() })
+      .update({ status: 'notified' })
       .eq('user_id', userId)
       .eq('type', alertInfo.type)
-      .eq('status', 'new');
-  } catch (error) {
-    console.error(`Error sending alert for user ${userId}:`, error);
-    // Continue execution even if sending alert fails
+      .eq('status', 'new')
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`Error sending alert for user ${userId}:`, err)
   }
 }

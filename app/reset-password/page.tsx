@@ -1,5 +1,5 @@
 // app/reset-password/page.tsx
-import React from 'react'
+import React, { Suspense } from 'react'
 import ResetPasswordClient from './ResetPasswordClient'
 
 export const metadata = {
@@ -7,12 +7,12 @@ export const metadata = {
 }
 
 export default function Page() {
-  // This is a Server Component that directly renders the client component.
-  // ResetPasswordClient is a client component (it has "use client"), so
-  // Next will ship it to the browser and hydrate it there.
   return (
     <main>
-      <ResetPasswordClient />
+      {/* Suspense ensures the server can prerender a fallback while the client hook (useSearchParams) waits */}
+      <Suspense fallback={<div className="min-h-[200px] flex items-center justify-center">Loading…</div>}>
+        <ResetPasswordClient />
+      </Suspense>
     </main>
   )
 }

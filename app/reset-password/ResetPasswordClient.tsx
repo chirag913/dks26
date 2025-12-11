@@ -1,5 +1,7 @@
 // app/reset-password/ResetPasswordClient.tsx
-'use client'
+
+
+"use client"
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
