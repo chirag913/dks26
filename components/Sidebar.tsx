@@ -526,27 +526,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
         </>
       ) : (
         <div>
-          {!canEditApi && !isApproved ? (
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <AlertCircle className="w-4 h-4 text-amber-500" />
-                <p className="text-xs text-gray-600">Premium access required</p>
-              </div>
-              <button
-                onClick={() => setIsSubscriptionModalOpen(true)}
-                className="w-full bg-black text-white py-2 rounded-md text-sm hover:bg-gray-800 transition-colors"
-              >
-                Subscribe / Start Trial
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleApiKeyClick}
-              className={`w-full ${canEditApi || isApproved ? 'bg-black text-white hover:bg-gray-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'} py-2 rounded-md text-sm transition-colors`}
-            >
-              {canEditApi || isApproved ? 'Enter API Key' : 'Locked — Subscribe to enable'}
-            </button>
-          )}
+          {!(isApproved || canEditApi) ? (
+  <div className="text-center">
+    <div className="flex items-center justify-center gap-2 mb-3">
+      <AlertCircle className="w-4 h-4 text-amber-500" />
+      <p className="text-xs text-gray-600">Premium access required</p>
+    </div>
+    <button
+      onClick={() => setIsSubscriptionModalOpen(true)}
+      className="w-full bg-black text-white py-2 rounded-md text-sm hover:bg-gray-800 transition-colors"
+    >
+      Subscribe / Start Trial
+    </button>
+  </div>
+) : (
+  <button
+    onClick={handleApiKeyClick}
+    className="w-full bg-black text-white hover:bg-gray-800 py-2 rounded-md text-sm transition-colors"
+  >
+    Enter API Key
+  </button>
+)}
+
         </div>
       )}
     </div>
@@ -568,24 +569,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
         {/* Action button (Manage or Subscribe) */}
         <div>
           {isApproved ? (
-            <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
-              Approved User
-            </div>
-          ) : subscription ? (
-            <button
-              onClick={() => setIsSubscriptionModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-1 rounded bg-black text-white text-xs font-medium hover:bg-gray-800"
-            >
-              Manage
-            </button>
-          ) : (
-            <button
-              onClick={() => setIsSubscriptionModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-1 rounded bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
-            >
-              Subscribe / Start Trial
-            </button>
-          )}
+  <div className="inline-flex items-center gap-2 px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
+    Approved User
+  </div>
+) : status === 'active' || status === 'trial-active' ? (
+  <button
+    onClick={() => setIsSubscriptionModalOpen(true)}
+    className="inline-flex items-center gap-2 px-3 py-1 rounded bg-black text-white text-xs font-medium hover:bg-gray-800"
+  >
+    Manage
+  </button>
+) : (
+  <button
+    onClick={() => setIsSubscriptionModalOpen(true)}
+    className="inline-flex items-center gap-2 px-3 py-1 rounded bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
+  >
+    Subscribe / Start Trial
+  </button>
+)}
+
         </div>
       </div>
 

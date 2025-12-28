@@ -106,18 +106,18 @@ export async function GET(req: Request) {
       secondsLeft = null
     }
 
-    // 5) Decide whether user can edit/add API key
-    // Server authoritative rules:
-    // - If subscription is missing or expired => cannot edit
-    // - If trading_config.locked_until is set and in the future => cannot edit
-    let canEditApi = true
-    if (!subscription) canEditApi = false
-    if (status === 'trial-expired' || status === 'expired') canEditApi = false
+    // 5) Decide whether user can edit/add API key (SERVER AUTHORITATIVE)
+let canEditApi =
+  status === 'active' ||
+  status === 'trial-active'
 
-    if (tradingConfig && tradingConfig.locked_until) {
-      const lockedUntil = new Date(tradingConfig.locked_until)
-      if (lockedUntil.getTime() > now.getTime()) canEditApi = false
-    }
+// lock override
+if (tradingConfig?.locked_until) {
+  const lockedUntil = new Date(tradingConfig.locked_until)
+  if (lockedUntil.getTime() > now.getTime()) {
+    canEditApi = false
+  }
+}
 
     // Response payload ready for the client sidebar UI
     return NextResponse.json({
