@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 
 /**
  * Secure server-side check-status route.
- * Expects Authorization: Bearer <access_token> header (user access token).
+ * Expects Authorization: Bearer <api_key> header (user access token).
  * Uses a service_role key to run RPCs and query DB safely.
  */
 

@@ -1,12 +1,13 @@
 // utils/api.ts
-// Lightweight client-side API helpers for calling your server and Dhan proxy routes.
-// - safeFetch wraps fetch and creates friendly, structured errors for auth/network issues.
-// - getPositions/getOrders/triggerKill accept an optional apiKey which is sent as x-dhan-token.
+// Safe client-side helpers for calling server + Dhan proxy routes
+// IMPORTANT: Never throw for broker/auth errors — return structured responses instead
 
-type FetchError = Error & {
+type ApiErrorResult = {
+  __error: true
+  code: 'EXPIRED_TOKEN' | 'NETWORK_ERROR' | 'SERVER_ERROR'
   status?: number
+  message: string
   body?: any
-  code?: string
 }
 
 const DK_EXPIRED_CODES = ['Invalid_Authentication', 'DH-901']
@@ -17,9 +18,7 @@ function makeHeaders(apiKey?: string, extra?: Record<string, string>) {
     Accept: 'application/json',
     ...(extra || {})
   }
-  if (apiKey) {
-    h['x-dhan-token'] = apiKey
-  }
+  if (apiKey) h['x-dhan-token'] = apiKey
   return h
 }
 
@@ -28,7 +27,7 @@ export async function safeFetch(url: string, opts: RequestInit = {}) {
     const res = await fetch(url, opts)
     const text = await res.text()
 
-    let json: any = undefined
+    let json: any
     try {
       json = text ? JSON.parse(text) : undefined
     } catch {
@@ -37,53 +36,60 @@ export async function safeFetch(url: string, opts: RequestInit = {}) {
 
     const textStr = typeof text === 'string' ? text : JSON.stringify(text ?? '')
 
-    // Detect broker-side expired/invalid token messages and normalize them
+    // ---- Detect expired / invalid broker token ----
     const looksLikeAuthError =
       DK_EXPIRED_CODES.some((c) => textStr.includes(c)) ||
       textStr.toLowerCase().includes('access token is invalid') ||
       textStr.toLowerCase().includes('access token is expired') ||
-      (res.status === 401 && textStr.length > 0)
+      res.status === 401
 
     if (looksLikeAuthError) {
-      const err: FetchError = new Error('Dhan API token invalid or expired')
-      err.status = 498 // custom client-side status for expired token
-      err.body = json ?? text
-      err.code = 'EXPIRED_TOKEN'
-      throw err
+      return {
+        __error: true,
+        code: 'EXPIRED_TOKEN',
+        status: res.status || 498,
+        message: 'Dhan API token invalid or expired',
+        body: json ?? text
+      } satisfies ApiErrorResult
     }
 
+    // ---- Other server errors ----
     if (!res.ok) {
-      const message =
-        json?.error ||
-        json?.message ||
-        text ||
-        res.statusText ||
-        'Server returned an error'
-
-      const err: FetchError = new Error(String(message))
-      err.status = res.status
-      err.body = json ?? text
-      throw err
+      return {
+        __error: true,
+        code: 'SERVER_ERROR',
+        status: res.status,
+        message:
+          json?.error ||
+          json?.message ||
+          text ||
+          res.statusText ||
+          'Server error',
+        body: json ?? text
+      } satisfies ApiErrorResult
     }
 
     return json
   } catch (e: any) {
-    // Network-level failure (e.g., offline, CORS, DNS)
+    // ---- Network / fetch failure ----
     if (e instanceof TypeError && String(e.message).toLowerCase().includes('failed to fetch')) {
-      const err: FetchError = new Error('Network error: failed to reach server')
-      err.code = 'NETWORK_ERROR'
-      throw err
+      return {
+        __error: true,
+        code: 'NETWORK_ERROR',
+        message: 'Network error: failed to reach server'
+      } satisfies ApiErrorResult
     }
-    // If we already created a structured FetchError above, rethrow it
-    throw e
+
+    return {
+      __error: true,
+      code: 'SERVER_ERROR',
+      message: e?.message ?? 'Unknown error'
+    } satisfies ApiErrorResult
   }
 }
 
 /* ------------ API Helpers ------------- */
 
-/**
- * Fetch positions via server proxy. Pass optional apiKey to forward as header.
- */
 export async function getPositions(apiKey?: string) {
   return safeFetch('/api/dhan/positions', {
     method: 'GET',
@@ -91,9 +97,6 @@ export async function getPositions(apiKey?: string) {
   })
 }
 
-/**
- * Fetch orders via server proxy. Pass optional apiKey to forward.
- */
 export async function getOrders(apiKey?: string) {
   return safeFetch('/api/dhan/orders', {
     method: 'GET',
@@ -101,11 +104,6 @@ export async function getOrders(apiKey?: string) {
   })
 }
 
-/**
- * Trigger kill sequence on the server (/api/kill/trigger).
- * If apiKey is provided it will be forwarded in x-dhan-token header (useful for client-side trigger).
- * `payload` will be JSON-encoded.
- */
 export async function triggerKill(apiKey?: string, payload?: any) {
   return safeFetch('/api/kill/trigger', {
     method: 'POST',
@@ -114,29 +112,20 @@ export async function triggerKill(apiKey?: string, payload?: any) {
   })
 }
 
-/**
- * Validate an API key server-side (calls /api/dhan/validate).
- * Returns true when API returns ok, false otherwise.
- */
 export async function validateApiKey(key: string) {
   if (!key || key.trim().length === 0) return false
   try {
-    const res = await safeFetch('/api/dhan/validate', {
+    const res: any = await safeFetch('/api/dhan/validate', {
       method: 'POST',
-      headers: makeHeaders(undefined), // don't send x-dhan-token here; key in body
+      headers: makeHeaders(undefined),
       body: JSON.stringify({ key: key.trim() })
     })
-    // Many validate endpoints return { ok: true } or similar; be permissive
     return Boolean(res?.ok || res?.valid || res === true)
   } catch {
     return false
   }
 }
 
-/**
- * Backwards-compatible factory: createDhanAPI(apiKey?)
- * Returns an object with the same methods you used previously in UI code.
- */
 export function createDhanAPI(apiKey?: string) {
   return {
     getPositions: () => getPositions(apiKey),

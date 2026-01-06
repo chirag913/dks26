@@ -149,7 +149,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
     setCheckingStatus(true)
     try {
       const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
+      const token = sessionData?.session?.api_key
       if (!token) {
         // not authenticated
         setCanEditApi(false)
@@ -276,7 +276,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
 
       // get user token
       const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
+      const token = sessionData?.session?.api_key
       if (!token) throw new Error('Not authenticated')
 
       // POST to server route that enforces subscription rules
@@ -323,7 +323,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobile = false }) => {
       setMessage(null)
 
       const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
+      const token = sessionData?.session?.api_key
       if (!token) throw new Error('Not authenticated')
 
       const res = await fetch('/api/trading-config/save', {

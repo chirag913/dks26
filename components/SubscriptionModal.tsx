@@ -36,7 +36,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
       const res = await fetch('/api/subscription/check-status', {
         headers: {
-          Authorization: `Bearer ${data.session.access_token}`,
+          Authorization: `Bearer ${data.session.api_key}`,
         },
       });
 
@@ -60,7 +60,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     const res = await fetch('/api/subscription/start-trial', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${data.session.access_token}`,
+        Authorization: `Bearer ${data.session.api_key}`,
       },
     });
 
@@ -80,7 +80,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${data.session.access_token}`,
+        Authorization: `Bearer ${data.session.api_key}`,
       },
       body: JSON.stringify({}),
     });
@@ -107,7 +107,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${verifySession.session.access_token}`,
+            Authorization: `Bearer ${verifySession.session.api_key}`,
           },
           body: JSON.stringify({
             razorpay_payment_id: response.razorpay_payment_id,

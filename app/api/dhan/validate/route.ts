@@ -12,7 +12,7 @@ export async function POST(req: Request) {
         return a?.startsWith("Bearer ") ? a.split(" ")[1] : null;
       })();
 
-    const token = body?.key || headerToken || process.env.DHAN_API_KEY;
+    const token = body?.key || headerToken || process.env.DHAN_api_key;
     console.log("[VALIDATE] token present?", Boolean(token));
 
     if (!token) {

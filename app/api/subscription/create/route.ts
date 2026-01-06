@@ -6,7 +6,7 @@ import { SUBSCRIPTION_CONFIG } from '@/config/subscription'
 
 /**
  * POST /api/subscription/create
- * - Expects Authorization: Bearer <access_token> (preferred).
+ * - Expects Authorization: Bearer <api_key> (preferred).
  * - Reuses an existing plan_id stored in `billing_config` (recommended).
  * - If plan is missing, creates one and stores plan_id in billing_config.
  * - Creates a subscription for the authenticated user and returns subscriptionId & key_id.

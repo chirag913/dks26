@@ -174,7 +174,8 @@ export default function Login() {
                   required
                   disabled={loading}
                   placeholder="you@company.com"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg shadow-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+
                 />
               </div>
 
@@ -189,7 +190,8 @@ export default function Login() {
                     required
                     disabled={loading}
                     placeholder="Your password"
-                    className="block w-full px-3 py-2 border border-gray-200 rounded-lg shadow-sm pr-10 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="mt-1 block w-full px-3 py-2 border border-gray-200 rounded-lg shadow-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+
                   />
 
                   <button
