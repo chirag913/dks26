@@ -56,6 +56,11 @@ const res = await fetch('/api/subscription/check-status', {
   };
 
   /* -------------------- TRY TRIAL FIRST -------------------- */
+const token = verifySession?.session?.access_token
+
+if (!token) {
+  throw new Error('User not authenticated')
+}
 
   const tryStartTrial = async (): Promise<boolean> => {
     const { data } = await supabase.auth.getSession();
@@ -64,7 +69,7 @@ const res = await fetch('/api/subscription/check-status', {
     const res = await fetch('/api/subscription/start-trial', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${data.session.access_token}`,
+        Authorization: `Bearer ${verifySession.session.access_token}`,
       },
     });
 
