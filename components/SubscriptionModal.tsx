@@ -64,7 +64,7 @@ const res = await fetch('/api/subscription/check-status', {
     const res = await fetch('/api/subscription/start-trial', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${data.session.api_key}`,
+        Authorization: `Bearer ${data.session.access_token}`,
       },
     });
 
@@ -84,7 +84,7 @@ const res = await fetch('/api/subscription/check-status', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${data.session.api_key}`,
+        Authorization: `Bearer ${data.session.access_token}`,
       },
       body: JSON.stringify({}),
     });
