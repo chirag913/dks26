@@ -31,14 +31,18 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const checkSubscription = async () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) return;
+      const { data } = await supabase.auth.getSession()
+const token = data?.session?.access_token
 
-      const res = await fetch('/api/subscription/check-status', {
-        headers: {
-          Authorization: `Bearer ${data.session.api_key}`,
-        },
-      });
+if (!token) {
+  throw new Error('Not authenticated')
+}
+
+const res = await fetch('/api/subscription/check-status', {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+})
 
       if (res.ok) {
         const json = await res.json();
