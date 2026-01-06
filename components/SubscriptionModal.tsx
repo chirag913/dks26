@@ -56,7 +56,11 @@ const res = await fetch('/api/subscription/check-status', {
   };
 
   /* -------------------- TRY TRIAL FIRST -------------------- */
-const token = verifySession?.session?.access_token
+const {
+  data: { session },
+} = await supabase.auth.getSession()
+
+const token = session?.access_token
 
 if (!token) {
   throw new Error('User not authenticated')
