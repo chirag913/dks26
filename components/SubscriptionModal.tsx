@@ -5,20 +5,25 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { X } from 'lucide-react'
 
 type Props = {
-  open: boolean
+  isOpen: boolean
   onClose: () => void
+  onSuccess: () => Promise<void>
 }
 
-export default function SubscriptionModal({ open, onClose }: Props) {
+export default function SubscriptionModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: Props) {
   const supabase = createClientComponentClient()
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authToken, setAuthToken] = useState<string | null>(null)
 
-  /* ================= FETCH SESSION SAFELY ================= */
+  /* ================= GET SESSION SAFELY ================= */
   useEffect(() => {
-    const fetchSession = async () => {
+    const loadSession = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession()
@@ -26,7 +31,7 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       setAuthToken(session?.access_token ?? null)
     }
 
-    fetchSession()
+    loadSession()
   }, [supabase])
 
   /* ================= START TRIAL ================= */
@@ -53,8 +58,7 @@ export default function SubscriptionModal({ open, onClose }: Props) {
         throw new Error(j.error || 'Failed to start trial')
       }
 
-      onClose()
-      window.location.reload()
+      await onSuccess()
     } catch (e: any) {
       setError(e.message || 'Something went wrong')
     } finally {
@@ -62,8 +66,7 @@ export default function SubscriptionModal({ open, onClose }: Props) {
     }
   }
 
-  /* ================= UI ================= */
-  if (!open) return null
+  if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
@@ -81,7 +84,7 @@ export default function SubscriptionModal({ open, onClose }: Props) {
           Start Free Trial
         </h2>
         <p className="mt-1 text-sm text-gray-500">
-          Activate risk controls instantly. No card required.
+          Enable risk protection instantly. No card required.
         </p>
 
         {/* ERROR */}
