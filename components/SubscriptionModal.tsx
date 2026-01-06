@@ -1,226 +1,113 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { X, CheckCircle } from 'lucide-react';
-import Script from 'next/script';
-import type { Subscription } from '@/types/subscription';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import React, { useEffect, useState } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { X } from 'lucide-react'
 
-interface SubscriptionModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
+type Props = {
+  open: boolean
+  onClose: () => void
 }
 
-const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
-  isOpen,
-  onClose,
-  onSuccess,
-}) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const supabase = createClientComponentClient();
+export default function SubscriptionModal({ open, onClose }: Props) {
+  const supabase = createClientComponentClient()
 
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(null)
 
-  /* -------------------- CHECK STATUS -------------------- */
-
+  /* ================= FETCH SESSION SAFELY ================= */
   useEffect(() => {
-    if (isOpen) checkSubscription();
-  }, [isOpen]);
+    const fetchSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-  const checkSubscription = async () => {
-    try {
-      const { data } = await supabase.auth.getSession()
-const token = data?.session?.access_token
-
-if (!token) {
-  throw new Error('Not authenticated')
-}
-
-const res = await fetch('/api/subscription/check-status', {
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-})
-
-      if (res.ok) {
-        const json = await res.json();
-        setSubscription(json.subscription ?? null);
-      } else {
-        setSubscription(null);
-      }
-    } catch {
-      setSubscription(null);
-    }
-  };
-
-  /* -------------------- TRY TRIAL FIRST -------------------- */
-const {
-  data: { session },
-} = await supabase.auth.getSession()
-
-const token = session?.access_token
-
-if (!token) {
-  throw new Error('User not authenticated')
-}
-
-  const tryStartTrial = async (): Promise<boolean> => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw new Error('Not authenticated');
-
-    const res = await fetch('/api/subscription/start-trial', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${verifySession.session.access_token}`,
-      },
-    });
-
-    if (res.ok) return true;        // ✅ trial created
-    if (res.status === 409) return false; // ❌ already used
-    const j = await res.json().catch(() => null);
-    throw new Error(j?.error ?? 'Failed to start trial');
-  };
-
-  /* -------------------- PAID FLOW -------------------- */
-
-  const openPaidSubscription = async () => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw new Error('Not authenticated');
-
-    const res = await fetch('/api/subscription/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${data.session.access_token}`,
-      },
-      body: JSON.stringify({}),
-    });
-
-    if (!res.ok) {
-      const j = await res.json().catch(() => null);
-      throw new Error(j?.error ?? 'Failed to create subscription');
+      setAuthToken(session?.access_token ?? null)
     }
 
-    const dataRes = await res.json();
+    fetchSession()
+  }, [supabase])
 
-    const options = {
-      key: dataRes.key_id,
-      subscription_id: dataRes.subscriptionId,
-      name: 'KillSwitch Pro',
-      description: 'Premium Monthly Subscription',
-      theme: { color: '#000000' },
+  /* ================= START TRIAL ================= */
+  const startTrial = async () => {
+    if (!authToken) {
+      setError('User not authenticated')
+      return
+    }
 
-      handler: async (response: any) => {
-        const { data: verifySession } = await supabase.auth.getSession();
-        if (!verifySession.session) throw new Error('Session expired');
+    setLoading(true)
+    setError(null)
 
-        const verifyRes = await fetch('/api/subscription/verify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${verifySession.session.api_key}`,
-          },
-          body: JSON.stringify({
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_subscription_id: response.razorpay_subscription_id,
-            razorpay_signature: response.razorpay_signature,
-          }),
-        });
-
-        if (!verifyRes.ok) throw new Error('Payment verification failed');
-
-        await checkSubscription();
-        onSuccess();
-        onClose();
-      },
-
-      modal: {
-        ondismiss: () => setLoading(false),
-      },
-    };
-
-    if (!(window as any).Razorpay) throw new Error('Razorpay not loaded');
-    new (window as any).Razorpay(options).open();
-  };
-
-  /* -------------------- MAIN HANDLER -------------------- */
-
-  const handleSubscription = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      const res = await fetch('/api/subscription/start-trial', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+      })
 
-      // 🔥 TRY TRIAL FIRST
-      const trialStarted = await tryStartTrial();
-      if (trialStarted) {
-        await checkSubscription();
-        onSuccess();
-        onClose();
-        return;
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error || 'Failed to start trial')
       }
 
-      // 💳 FALLBACK TO PAID
-      await openPaidSubscription();
-    } catch (err: any) {
-      setError(err?.message ?? 'Something went wrong');
+      onClose()
+      window.location.reload()
+    } catch (e: any) {
+      setError(e.message || 'Something went wrong')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  if (!isOpen) return null;
-
-  const isSubscribed =
-    subscription?.status === 'active' && !subscription?.is_trial;
-
-  /* -------------------- UI -------------------- */
+  /* ================= UI ================= */
+  if (!open) return null
 
   return (
-    <>
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6 relative">
+        {/* CLOSE */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-700"
+        >
+          <X className="h-5 w-5" />
+        </button>
 
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-        <div className="bg-white p-6 rounded-lg w-96">
-          <div className="flex justify-between mb-4">
-<h2 className="text-xl font-bold text-black">Premium Subscription</h2>
-            <button onClick={onClose}><X /></button>
+        {/* HEADER */}
+        <h2 className="text-xl font-semibold text-gray-900">
+          Start Free Trial
+        </h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Activate risk controls instantly. No card required.
+        </p>
+
+        {/* ERROR */}
+        {error && (
+          <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">
+            {error}
           </div>
+        )}
 
-          {error && (
-            <div className="mb-3 bg-red-50 text-red-700 p-2 rounded text-sm">
-              {error}
-            </div>
-          )}
+        {/* ACTION */}
+        <button
+          disabled={loading}
+          onClick={startTrial}
+          className={`mt-6 w-full rounded-xl py-3 text-sm font-semibold transition ${
+            loading
+              ? 'bg-gray-200 text-gray-500'
+              : 'bg-gray-900 text-white hover:bg-gray-800'
+          }`}
+        >
+          {loading ? 'Starting…' : 'Start 7-Day Free Trial'}
+        </button>
 
-          {isSubscribed && (
-            <div className="mb-3 bg-green-50 text-green-700 p-2 rounded flex gap-2">
-              <CheckCircle size={16} />
-              Active Subscription
-            </div>
-          )}
-
-          <div className="mb-4 text-sm text-gray-600">
-            • Max loss protection<br />
-            • Order limit control<br />
-            • Auto kill-switch<br />
-            • Real-time alerts
-          </div>
-
-          {!isSubscribed && (
-            <button
-              onClick={handleSubscription}
-              disabled={loading}
-              className="w-full bg-black text-white py-3 rounded"
-            >
-              {loading ? 'Processing…' : 'Start Free Trial'}
-            </button>
-          )}
-        </div>
+        <p className="mt-3 text-xs text-gray-500 text-center">
+          Trial auto-expires. No auto-billing.
+        </p>
       </div>
-    </>
-  );
-};
-
-export default SubscriptionModal;
+    </div>
+  )
+}
