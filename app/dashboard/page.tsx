@@ -217,9 +217,13 @@ const isLockedToday =
 
           <div className="space-y-4">
             <Input label="Max Loss (₹)" value={config.max_loss} disabled={isLockedToday}
-              onChange={(v) => setConfig({ ...config, max_loss: v })} />
+             onChange={(v: number) =>
+  setConfig({ ...config, max_loss: v })
+}} />
             <Input label="Max Orders" value={config.max_orders} disabled={isLockedToday}
-              onChange={(v) => setConfig({ ...config, max_orders: v })} />
+              onChange={(v: number) =>
+  setConfig({ ...config, max_orders: v })
+} />
 
             <button
               disabled={isLockedToday}
