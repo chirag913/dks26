@@ -320,38 +320,58 @@ const res = await fetch('/api/subscription/check-status', {
   }
 
   const handleRemoveApiKey = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      setMessage(null)
+  try {
+    setLoading(true)
+    setError(null)
+    setMessage(null)
 
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
-      if (!token) throw new Error('Not authenticated')
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    if (!token) throw new Error('Not authenticated')
 
-      const res = await fetch('/api/trading-config/save', {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        throw new Error(json?.error ?? json?.message ?? 'Failed to remove API key')
+    const res = await fetch('/api/trading-config/save', {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+
+    // 🔒 SAFE RESPONSE HANDLING (NO CRASH)
+    const text = await res.text()
+    let data: any = null
+
+    if (text) {
+      try {
+        data = JSON.parse(text)
+      } catch {
+        // ignore non-JSON response
       }
-
-      setSavedApiKey(null)
-      setMessage('API key removed')
-      setTimeout(() => setMessage(null), 1400)
-      // refresh status
-      await fetchCheckStatus()
-    } catch (err) {
-      console.error('Remove API key error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to remove API key')
-    } finally {
-      setLoading(false)
     }
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error ??
+        data?.message ??
+        'Failed to remove API key'
+      )
+    }
+
+    // ✅ SUCCESS
+    setSavedApiKey(null)
+    setMessage('API key removed')
+    setTimeout(() => setMessage(null), 1400)
+
+    await fetchCheckStatus()
+
+  } catch (err) {
+    console.error('Remove API key error:', err)
+    setError(
+      err instanceof Error ? err.message : 'Failed to remove API key'
+    )
+  } finally {
+    setLoading(false)
   }
+}
 
   /* ---------- Other handlers ---------- */
 

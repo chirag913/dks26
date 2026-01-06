@@ -1,4 +1,3 @@
-// app/api/trading-config/save/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -11,6 +10,9 @@ type SaveBody = {
   api_key?: string
 }
 
+/* =======================================================
+   POST — Save / Update API Key
+======================================================= */
 export async function POST(req: Request) {
   try {
     /* ---------- AUTH ---------- */
@@ -64,10 +66,14 @@ export async function POST(req: Request) {
 
       const isActive =
         subscription &&
-        (subscription.status === 'active' ||
-          (subscription.status === 'trial' &&
+        (
+          subscription.status === 'active' ||
+          (
+            subscription.status === 'trial' &&
             subscription.end_date &&
-            subscription.end_date > nowIso))
+            subscription.end_date > nowIso
+          )
+        )
 
       if (!isActive) {
         return NextResponse.json(
@@ -88,7 +94,7 @@ export async function POST(req: Request) {
       const { error: updErr } = await supabase
         .from('trading_configs')
         .update({
-          api_key,          // 🔒 encrypt here later
+          api_key,               // 🔒 encrypt later if needed
           daily_lock_date: null,
           updated_at: new Date().toISOString()
         })
@@ -102,7 +108,7 @@ export async function POST(req: Request) {
         .from('trading_configs')
         .insert({
           user_id: user.id,
-          api_key,          // 🔒 encrypt here later
+          api_key,
           created_at: new Date().toISOString()
         })
 
@@ -119,6 +125,51 @@ export async function POST(req: Request) {
         source: 'api',
         approved: isApproved
       }
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch {
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+/* =======================================================
+   DELETE — Remove API Key
+======================================================= */
+export async function DELETE(req: Request) {
+  try {
+    const auth = req.headers.get('authorization')
+    if (!auth?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const jwt = auth.replace('Bearer ', '').trim()
+    const { data: authData, error } = await supabase.auth.getUser(jwt)
+
+    if (!authData?.user || error) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
+    }
+
+    const { error: delErr } = await supabase
+      .from('trading_configs')
+      .update({
+        api_key: null,
+        daily_lock_date: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', authData.user.id)
+
+    if (delErr) {
+      return NextResponse.json({ error: delErr.message }, { status: 500 })
+    }
+
+    await supabase.from('audit_logs').insert({
+      user_id: authData.user.id,
+      action: 'API_KEY_REMOVED',
+      metadata: { source: 'api' }
     })
 
     return NextResponse.json({ ok: true })

@@ -23,15 +23,22 @@ export default function SubscriptionModal({
 
   /* ================= GET SESSION SAFELY ================= */
   useEffect(() => {
+    let mounted = true
+
     const loadSession = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
-      setAuthToken(session?.access_token ?? null)
+      if (mounted) {
+        setAuthToken(session?.access_token ?? null)
+      }
     }
 
     loadSession()
+    return () => {
+      mounted = false
+    }
   }, [supabase])
 
   /* ================= START TRIAL ================= */
@@ -48,19 +55,31 @@ export default function SubscriptionModal({
       const res = await fetch('/api/subscription/start-trial', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
       })
 
+      // 🔒 SAFE RESPONSE HANDLING
       if (!res.ok) {
-        const j = await res.json()
-        throw new Error(j.error || 'Failed to start trial')
+        let message = 'Failed to start trial'
+
+        const text = await res.text()
+        if (text) {
+          try {
+            const json = JSON.parse(text)
+            message = json.error || message
+          } catch {
+            // non-json response
+          }
+        }
+
+        throw new Error(message)
       }
 
+      // ✅ SUCCESS — do NOT parse JSON if not needed
       await onSuccess()
-    } catch (e: any) {
-      setError(e.message || 'Something went wrong')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setLoading(false)
     }
