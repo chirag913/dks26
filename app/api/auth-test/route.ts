@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     if (accessToken && refreshToken) {
       try {
         const { data, error } = await supabase.auth.setSession({
-          api_key: accessToken,
+          access_token: accessToken,
           refresh_token: refreshToken
         });
         
