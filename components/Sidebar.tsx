@@ -279,7 +279,7 @@ const res = await fetch('/api/subscription/check-status', {
 
       // get user token
       const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.api_key
+      const token = sessionData?.session?.access_token
       if (!token) throw new Error('Not authenticated')
 
       // POST to server route that enforces subscription rules
@@ -326,7 +326,7 @@ const res = await fetch('/api/subscription/check-status', {
       setMessage(null)
 
       const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.api_key
+      const token = sessionData?.session?.access_token
       if (!token) throw new Error('Not authenticated')
 
       const res = await fetch('/api/trading-config/save', {
