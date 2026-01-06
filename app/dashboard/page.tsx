@@ -18,6 +18,8 @@ import {
 import { ShieldCheck, AlertTriangle } from 'lucide-react'
 import { getPositions, getOrders, triggerKill } from '@/utils/api'
 
+/* ===== TYPES ===== */
+
 type TradingConfig = {
   api_key: string
   max_loss: string
@@ -25,9 +27,14 @@ type TradingConfig = {
   daily_lock_date?: string | null
 }
 
-type PnlPoint = { time: string; pnl: number }
+type PnlPoint = {
+  time: string
+  pnl: number
+}
 
-const asArray = (v: any) => (Array.isArray(v) ? v : [])
+const asArray = (v: unknown): any[] => (Array.isArray(v) ? v : [])
+
+/* ===== COMPONENT ===== */
 
 export default function Dashboard() {
   const supabase = createClientComponentClient()
@@ -39,6 +46,7 @@ export default function Dashboard() {
     max_loss: '-5000',
     max_orders: '10'
   })
+
   const [currentPnL, setCurrentPnL] = useState(0)
   const [orderCount, setOrderCount] = useState(0)
   const [pnlHistory, setPnlHistory] = useState<PnlPoint[]>([])
@@ -46,16 +54,19 @@ export default function Dashboard() {
   const [apiTokenExpired, setApiTokenExpired] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
+  // YYYY-MM-DD in local timezone (IST-safe)
   const todayISO = new Date().toLocaleDateString('en-CA')
-// YYYY-MM-DD in local timezone (IST on Indian systems)
-
-const isLockedToday =
-  config.daily_lock_date?.slice(0, 10) === todayISO
+  const isLockedToday =
+    config.daily_lock_date?.slice(0, 10) === todayISO
 
   /* ===== LOAD CONFIG ===== */
+
   const loadConfig = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return router.push('/login')
+    if (!user) {
+      router.push('/login')
+      return
+    }
 
     const { data } = await supabase
       .from('trading_configs')
@@ -99,8 +110,10 @@ const isLockedToday =
   }, [])
 
   /* ===== MONITOR ===== */
+
   const updateStats = useCallback(async () => {
     if (!config.api_key || killRef.current) return
+
     try {
       const [posRaw, ordRaw] = await Promise.all([
         getPositions(config.api_key),
@@ -108,29 +121,40 @@ const isLockedToday =
       ])
 
       const pnl = asArray(posRaw).reduce(
-        (s: number, p: any) =>
-          s + Number(p.realizedProfit ?? 0) + Number(p.unrealizedProfit ?? 0),
+        (sum, p) =>
+          sum +
+          Number(p.realizedProfit ?? 0) +
+          Number(p.unrealizedProfit ?? 0),
         0
       )
 
       const completedOrders = asArray(ordRaw).filter(
-        (o: any) => String(o.orderStatus).toUpperCase() === 'TRADED'
+        o => String(o.orderStatus).toUpperCase() === 'TRADED'
       ).length
 
       setCurrentPnL(pnl)
       setOrderCount(completedOrders)
-      setPnlHistory(p => [...p.slice(-20), { time: new Date().toLocaleTimeString(), pnl }])
+      setPnlHistory(prev => [
+        ...prev.slice(-20),
+        { time: new Date().toLocaleTimeString(), pnl }
+      ])
 
       if (
         pnl <= Number(config.max_loss) ||
         completedOrders >= Number(config.max_orders)
       ) {
         killRef.current = true
-        await triggerKill(undefined, { source: 'server', pnl, orders: completedOrders })
+        await triggerKill(undefined, {
+          source: 'server',
+          pnl,
+          orders: completedOrders
+        })
         setKillTriggeredToday(true)
       }
     } catch (e: any) {
-      if (e?.code === 'EXPIRED_TOKEN') setApiTokenExpired(true)
+      if (e?.code === 'EXPIRED_TOKEN') {
+        setApiTokenExpired(true)
+      }
     }
   }, [config])
 
@@ -141,18 +165,25 @@ const isLockedToday =
   }, [updateStats, killTriggeredToday])
 
   /* ===== SAVE ===== */
+
   const handleSave = async () => {
     if (isLockedToday) return
-    await supabase.from('trading_configs').update({
-      max_loss: Number(config.max_loss),
-      max_orders: Number(config.max_orders),
-      daily_lock_date: todayISO
-    }).eq('api_key', config.api_key)
+
+    await supabase
+      .from('trading_configs')
+      .update({
+        max_loss: Number(config.max_loss),
+        max_orders: Number(config.max_orders),
+        daily_lock_date: todayISO
+      })
+      .eq('api_key', config.api_key)
 
     setConfig(c => ({ ...c, daily_lock_date: todayISO }))
     setMessage('Risk limits locked for today')
     setTimeout(() => setMessage(null), 3000)
   }
+
+  /* ===== UI ===== */
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans antialiased px-4 sm:px-8 py-8">
@@ -178,7 +209,9 @@ const isLockedToday =
         </div>
 
         {apiTokenExpired && <Alert title="API Token Expired" />}
-        {killTriggeredToday && <Alert title="Take a break, Come back tomorrow." danger />}
+        {killTriggeredToday && (
+          <Alert title="Take a break. Come back tomorrow." danger />
+        )}
 
         {/* STATS */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
@@ -202,7 +235,11 @@ const isLockedToday =
               <XAxis tick={{ fill: '#6B7280', fontSize: 12 }} />
               <YAxis tick={{ fill: '#6B7280', fontSize: 12 }} />
               <Tooltip />
-              <ReferenceLine y={Number(config.max_loss)} stroke="#EF4444" strokeDasharray="4 4" />
+              <ReferenceLine
+                y={Number(config.max_loss)}
+                stroke="#EF4444"
+                strokeDasharray="4 4"
+              />
               <Line dataKey="pnl" stroke="#111827" strokeWidth={2} />
               <Area dataKey="pnl" fill="#111827" fillOpacity={0.06} />
             </LineChart>
@@ -216,14 +253,23 @@ const isLockedToday =
           </h2>
 
           <div className="space-y-4">
-            <Input label="Max Loss (₹)" value={config.max_loss} disabled={isLockedToday}
-             onChange={(v: number) =>
-  setConfig({ ...config, max_loss: v })
-}} />
-            <Input label="Max Orders" value={config.max_orders} disabled={isLockedToday}
-              onChange={(v: number) =>
-  setConfig({ ...config, max_orders: v })
-} />
+            <Input
+              label="Max Loss (₹)"
+              value={config.max_loss}
+              disabled={isLockedToday}
+              onChange={(v: string) =>
+                setConfig({ ...config, max_loss: v })
+              }
+            />
+
+            <Input
+              label="Max Orders"
+              value={config.max_orders}
+              disabled={isLockedToday}
+              onChange={(v: string) =>
+                setConfig({ ...config, max_orders: v })
+              }
+            />
 
             <button
               disabled={isLockedToday}
@@ -237,7 +283,9 @@ const isLockedToday =
               {isLockedToday ? 'Locked for Today' : 'Save & Lock'}
             </button>
 
-            {message && <p className="text-sm text-emerald-600">{message}</p>}
+            {message && (
+              <p className="text-sm text-emerald-600">{message}</p>
+            )}
           </div>
         </Card>
       </div>
@@ -247,7 +295,7 @@ const isLockedToday =
 
 /* ===== UI HELPERS ===== */
 
-function Card({ children }: any) {
+function Card({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 sm:p-6">
       {children}
@@ -255,22 +303,42 @@ function Card({ children }: any) {
   )
 }
 
-function Stat({ label, value, danger }: any) {
+function Stat({
+  label,
+  value,
+  danger
+}: {
+  label: string
+  value: React.ReactNode
+  danger?: boolean
+}) {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
       <p className="text-[11px] tracking-wide text-gray-500 uppercase">
         {label}
       </p>
-      <p className={`mt-2 text-2xl font-semibold ${
-        danger ? 'text-red-600' : 'text-gray-900'
-      }`}>
+      <p
+        className={`mt-2 text-2xl font-semibold ${
+          danger ? 'text-red-600' : 'text-gray-900'
+        }`}
+      >
         {value}
       </p>
     </div>
   )
 }
 
-function Input({ label, value, onChange, disabled }: any) {
+function Input({
+  label,
+  value,
+  onChange,
+  disabled
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  disabled?: boolean
+}) {
   return (
     <div>
       <label className="block text-[11px] tracking-wide text-gray-500 uppercase mb-1">
@@ -279,7 +347,7 @@ function Input({ label, value, onChange, disabled }: any) {
       <input
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         className={`w-full rounded-xl border px-4 py-2.5 text-sm ${
           disabled
             ? 'bg-gray-100 text-gray-500'
@@ -290,15 +358,29 @@ function Input({ label, value, onChange, disabled }: any) {
   )
 }
 
-function Alert({ title, danger }: any) {
+function Alert({
+  title,
+  danger
+}: {
+  title: string
+  danger?: boolean
+}) {
   return (
-    <div className={`rounded-xl border px-4 py-3 flex items-center gap-2 ${
-      danger ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'
-    }`}>
-      <AlertTriangle className={`h-4 w-4 ${
-        danger ? 'text-red-600' : 'text-amber-600'
-      }`} />
-      <span className="text-sm font-medium text-gray-800">{title}</span>
+    <div
+      className={`rounded-xl border px-4 py-3 flex items-center gap-2 ${
+        danger
+          ? 'border-red-300 bg-red-50'
+          : 'border-amber-300 bg-amber-50'
+      }`}
+    >
+      <AlertTriangle
+        className={`h-4 w-4 ${
+          danger ? 'text-red-600' : 'text-amber-600'
+        }`}
+      />
+      <span className="text-sm font-medium text-gray-800">
+        {title}
+      </span>
     </div>
   )
 }
