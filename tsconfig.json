@@ -12,16 +12,17 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
 
-    // REQUIRED by Next.js (Next automatically handles JSX transform)
+    // REQUIRED by Next.js
     "jsx": "preserve",
 
     "incremental": true,
     "baseUrl": ".",
+
     "noImplicitAny": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
 
-    // Ensure JSX types exist
+    // JSX types
     "types": ["react", "react-dom"],
 
     "plugins": [{ "name": "next" }],
@@ -44,5 +45,12 @@
     "types/**/*.d.ts"
   ],
 
-  "exclude": ["node_modules", ".next", "out"]
+  "exclude": [
+    "node_modules",
+    ".next",
+    "out",
+
+    // 🚫 IMPORTANT: Exclude Supabase Deno Edge Functions
+    "supabase/functions"
+  ]
 }
