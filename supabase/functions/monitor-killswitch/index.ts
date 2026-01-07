@@ -8,21 +8,21 @@ const supabase = createClient(
 )
 
 // Market hours: 9:15 AM – 3:30 PM IST (Mon–Fri)
-function isMarketOpenIST() {
+function isMarketOpenIST(): boolean {
   const ist = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   )
 
   const day = ist.getDay()
-  if (day === 0 || day === 6) return false // Sunday / Saturday
+  if (day === 0 || day === 6) return false // Sun / Sat
 
   const minutes = ist.getHours() * 60 + ist.getMinutes()
   return minutes >= 555 && minutes <= 930
 }
 
 serve(async () => {
-  const now = new Date()
-  console.log("monitor-killswitch tick", now.toISOString())
+  // 🔥 Heartbeat log (ALWAYS runs)
+  console.log("🔥 MONITOR KILLSWITCH ALIVE 🔥", new Date().toISOString())
 
   // Skip outside market hours
   if (!isMarketOpenIST()) {
@@ -32,10 +32,11 @@ serve(async () => {
 
   console.log("market open")
 
+  const now = new Date()
   const today = now.toISOString().slice(0, 10)
   const startOfDayIST = `${today}T00:00:00+05:30`
 
-  // Fetch ALL trading configs (do NOT filter by daily_lock_date)
+  // Fetch ALL users (do NOT filter by daily_lock_date)
   const { data: users, error: userErr } = await supabase
     .from("trading_configs")
     .select("*")
@@ -51,7 +52,7 @@ serve(async () => {
     try {
       console.log("checking user", u.user_id)
 
-      // Check if already killed today
+      // Idempotency check — already killed today?
       const { data: killedToday } = await supabase
         .from("kill_switch_logs")
         .select("id")
@@ -64,12 +65,10 @@ serve(async () => {
         continue
       }
 
-      // Fetch live PnL + order count from broker API
+      // Fetch broker PnL + order count
       const res = await fetch(
         `${Deno.env.get("SITE_URL")}/api/dhan/summary`,
-        {
-          headers: { "x-user-id": u.user_id }
-        }
+        { headers: { "x-user-id": u.user_id } }
       )
 
       if (!res.ok) {
@@ -89,29 +88,23 @@ serve(async () => {
         u.max_orders > 0 &&
         orders >= u.max_orders
 
-      if (!lossHit && !orderHit) {
-        continue
-      }
+      if (!lossHit && !orderHit) continue
 
-      console.log("KILL TRIGGERED", {
+      console.log("🚨 KILL TRIGGERED 🚨", {
         user_id: u.user_id,
         pnl,
         orders,
         reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
       })
 
-      // Trigger broker / system kill
+      // Trigger broker kill
       await fetch(`${Deno.env.get("SITE_URL")}/api/kill/trigger`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: u.user_id,
-          pnl,
-          orders
-        })
+        body: JSON.stringify({ user_id: u.user_id, pnl, orders })
       })
 
-      // Insert enforcement log (SOURCE OF TRUTH)
+      // Enforcement log (SOURCE OF TRUTH)
       await supabase.from("kill_switch_logs").insert({
         user_id: u.user_id,
         pnl,
@@ -119,7 +112,7 @@ serve(async () => {
         reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
       })
 
-      // Optional UI lock (NOT enforcement)
+      // UI lock only
       await supabase
         .from("trading_configs")
         .update({ daily_lock_date: today })
