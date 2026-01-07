@@ -252,7 +252,7 @@ export default function Dashboard() {
             Daily Risk Parameters
           </h2>
 
-          <div className="space-y-4">
+          <div className="text-base font-semibold text-gray-800 mb-4">
             <Input
               label="Max Loss (₹)"
               value={config.max_loss}
