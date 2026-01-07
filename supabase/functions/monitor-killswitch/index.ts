@@ -1,30 +1,135 @@
-✅ FIX #2 (STRONGLY RECOMMENDED)
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-Do NOT use daily_lock_date to decide who to monitor
+// Supabase admin client
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+)
 
-Instead, base enforcement only on kill logs.
+// Market hours: 9:15 AM – 3:30 PM IST (Mon–Fri)
+function isMarketOpenIST() {
+  const ist = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  )
 
-Change selection to:
-.from("trading_configs")
-.select("*")
+  const day = ist.getDay()
+  if (day === 0 || day === 6) return false // Sunday / Saturday
 
+  const minutes = ist.getHours() * 60 + ist.getMinutes()
+  return minutes >= 555 && minutes <= 930
+}
 
-And before triggering, check kill log for today:
+serve(async () => {
+  const now = new Date()
+  console.log("monitor-killswitch tick", now.toISOString())
 
-const { data: killedToday } = await supabase
-  .from("kill_switch_logs")
-  .select("id")
-  .eq("user_id", u.user_id)
-  .gte("created_at", today + "T00:00:00+05:30")
-  .limit(1)
+  // Skip outside market hours
+  if (!isMarketOpenIST()) {
+    console.log("market closed")
+    return new Response("closed")
+  }
 
-if (killedToday?.length) continue
+  console.log("market open")
 
+  const today = now.toISOString().slice(0, 10)
+  const startOfDayIST = `${today}T00:00:00+05:30`
 
-Now:
+  // Fetch ALL trading configs (do NOT filter by daily_lock_date)
+  const { data: users, error: userErr } = await supabase
+    .from("trading_configs")
+    .select("*")
 
-daily_lock_date = UI config lock
+  if (userErr) {
+    console.error("failed to fetch trading configs", userErr)
+    return new Response("error", { status: 500 })
+  }
 
-kill_switch_logs = enforcement truth
+  console.log("users fetched", users?.length ?? 0)
 
-This matches the architecture you designed earlier.
+  for (const u of users || []) {
+    try {
+      console.log("checking user", u.user_id)
+
+      // Check if already killed today
+      const { data: killedToday } = await supabase
+        .from("kill_switch_logs")
+        .select("id")
+        .eq("user_id", u.user_id)
+        .gte("created_at", startOfDayIST)
+        .limit(1)
+
+      if (killedToday?.length) {
+        console.log("already killed today", u.user_id)
+        continue
+      }
+
+      // Fetch live PnL + order count from broker API
+      const res = await fetch(
+        `${Deno.env.get("SITE_URL")}/api/dhan/summary`,
+        {
+          headers: { "x-user-id": u.user_id }
+        }
+      )
+
+      if (!res.ok) {
+        console.error("summary api failed", u.user_id)
+        continue
+      }
+
+      const { pnl, orders } = await res.json()
+
+      const lossHit =
+        typeof u.max_loss === "number" &&
+        u.max_loss < 0 &&
+        pnl <= u.max_loss
+
+      const orderHit =
+        typeof u.max_orders === "number" &&
+        u.max_orders > 0 &&
+        orders >= u.max_orders
+
+      if (!lossHit && !orderHit) {
+        continue
+      }
+
+      console.log("KILL TRIGGERED", {
+        user_id: u.user_id,
+        pnl,
+        orders,
+        reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
+      })
+
+      // Trigger broker / system kill
+      await fetch(`${Deno.env.get("SITE_URL")}/api/kill/trigger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: u.user_id,
+          pnl,
+          orders
+        })
+      })
+
+      // Insert enforcement log (SOURCE OF TRUTH)
+      await supabase.from("kill_switch_logs").insert({
+        user_id: u.user_id,
+        pnl,
+        orders,
+        reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
+      })
+
+      // Optional UI lock (NOT enforcement)
+      await supabase
+        .from("trading_configs")
+        .update({ daily_lock_date: today })
+        .eq("id", u.id)
+
+    } catch (e) {
+      console.error("user processing error", u.user_id, e)
+    }
+  }
+
+  console.log("monitor-killswitch run complete")
+  return new Response("ok")
+})
