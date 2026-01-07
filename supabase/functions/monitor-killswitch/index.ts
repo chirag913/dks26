@@ -1,80 +1,56 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-// Supabase admin client
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
-// Market hours: 9:15 AM – 3:30 PM IST (Mon–Fri)
-function isMarketOpenIST(): boolean {
+function isMarketOpenIST() {
   const ist = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   )
 
   const day = ist.getDay()
-  if (day === 0 || day === 6) return false // Sun / Sat
+  if (day === 0 || day === 6) return false
 
   const minutes = ist.getHours() * 60 + ist.getMinutes()
   return minutes >= 555 && minutes <= 930
 }
 
 serve(async () => {
-  // 🔥 Heartbeat log (ALWAYS runs)
-  console.log("🔥 MONITOR KILLSWITCH ALIVE 🔥", new Date().toISOString())
+  await supabase.from("killswitch_cron_heartbeat").insert({});
+  console.log("monitor-killswitch tick", new Date().toISOString())
 
-  // Skip outside market hours
   if (!isMarketOpenIST()) {
     console.log("market closed")
     return new Response("closed")
   }
 
-  console.log("market open")
+  const today = new Date().toISOString().slice(0, 10)
 
-  const now = new Date()
-  const today = now.toISOString().slice(0, 10)
-  const startOfDayIST = `${today}T00:00:00+05:30`
-
-  // Fetch ALL users (do NOT filter by daily_lock_date)
-  const { data: users, error: userErr } = await supabase
+  const { data: users, error } = await supabase
     .from("trading_configs")
     .select("*")
 
-  if (userErr) {
-    console.error("failed to fetch trading configs", userErr)
+  if (error) {
+    console.error("failed to fetch users", error)
     return new Response("error", { status: 500 })
   }
 
-  console.log("users fetched", users?.length ?? 0)
-
   for (const u of users || []) {
     try {
-      console.log("checking user", u.user_id)
-
-      // Idempotency check — already killed today?
-      const { data: killedToday } = await supabase
-        .from("kill_switch_logs")
-        .select("id")
-        .eq("user_id", u.user_id)
-        .gte("created_at", startOfDayIST)
-        .limit(1)
-
-      if (killedToday?.length) {
-        console.log("already killed today", u.user_id)
-        continue
-      }
-
-      // Fetch broker PnL + order count
       const res = await fetch(
         `${Deno.env.get("SITE_URL")}/api/dhan/summary`,
-        { headers: { "x-user-id": u.user_id } }
+        {
+          headers: {
+            "x-user-id": u.user_id,
+            "x-internal-cron": Deno.env.get("INTERNAL_CRON_SECRET")!
+          }
+        }
       )
 
-      if (!res.ok) {
-        console.error("summary api failed", u.user_id)
-        continue
-      }
+      if (!res.ok) continue
 
       const { pnl, orders } = await res.json()
 
@@ -90,21 +66,20 @@ serve(async () => {
 
       if (!lossHit && !orderHit) continue
 
-      console.log("🚨 KILL TRIGGERED 🚨", {
-        user_id: u.user_id,
-        pnl,
-        orders,
-        reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
-      })
+      console.log("KILL TRIGGERED", u.user_id, pnl, orders)
 
-      // Trigger broker kill
+      // Trigger kill
       await fetch(`${Deno.env.get("SITE_URL")}/api/kill/trigger`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: u.user_id, pnl, orders })
+        body: JSON.stringify({
+          user_id: u.user_id,
+          pnl,
+          orders
+        })
       })
 
-      // Enforcement log (SOURCE OF TRUTH)
+      // Log kill (source of truth)
       await supabase.from("kill_switch_logs").insert({
         user_id: u.user_id,
         pnl,
@@ -112,17 +87,16 @@ serve(async () => {
         reason: lossHit ? "MAX_LOSS" : "MAX_ORDERS"
       })
 
-      // UI lock only
+      // Optional UI lock
       await supabase
         .from("trading_configs")
         .update({ daily_lock_date: today })
         .eq("id", u.id)
 
     } catch (e) {
-      console.error("user processing error", u.user_id, e)
+      console.error("user error", u.user_id, e)
     }
   }
 
-  console.log("monitor-killswitch run complete")
   return new Response("ok")
 })
