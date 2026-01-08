@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import getDhanClientFactory from "@/lib/dhanServer";
 import { performCompleteKill } from "@/helpers/killHelpers";
 
+// 🔒 SERVER-ONLY SUPABASE CLIENT (NO COOKIES)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -11,7 +12,7 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
 
     const userId = body?.user_id as string | undefined;
     const reason = body?.reason ?? "cron";
@@ -23,10 +24,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔒 Fetch API key STRICTLY by user_id
+    // 🔑 Fetch API key strictly by user_id
     const { data: cfg, error } = await supabase
       .from("trading_configs")
-      .select("api_key, max_orders, max_loss")
+      .select("api_key")
       .eq("user_id", userId)
       .single();
 
@@ -37,20 +38,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const apiKey = cfg.api_key;
+    // 🧠 Create correct Dhan client
+    const dhan = getDhanClientFactory()(cfg.api_key);
 
-    // 🔑 Create correct Dhan client
-    const create = getDhanClientFactory();
-    const dhan = create(apiKey);
-
-    // 🔥 Always attempt kill
+    // 🔥 Attempt kill (idempotent)
     const { final, trace } = await performCompleteKill(dhan, {
       pauseMs: 2000,
       retryFinal: 5,
       backoffMs: 500,
     });
 
-    // ✅ ALWAYS LOG (even if already active)
+    // ✅ ALWAYS log enforcement (even if already active)
     await supabase.from("kill_switch_logs").insert({
       user_id: userId,
       trigger_reason: reason,
@@ -65,7 +63,6 @@ export async function POST(req: Request) {
       broker_final: final,
       note: "Kill enforced or already active",
     });
-
   } catch (err: any) {
     console.error("[kill/trigger] fatal error:", err);
     return NextResponse.json(
