@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
 import {
@@ -16,7 +16,6 @@ import {
   ReferenceLine
 } from 'recharts'
 import { ShieldCheck, AlertTriangle } from 'lucide-react'
-import { getPositions, getOrders } from '@/utils/api'
 
 /* ================= TYPES ================= */
 
@@ -31,45 +30,41 @@ type PnlPoint = {
   pnl: number
 }
 
-const asArray = (v: unknown): any[] => (Array.isArray(v) ? v : [])
-
 /* ================= COMPONENT ================= */
 
 export default function Dashboard() {
   const supabase = createClientComponentClient()
   const router = useRouter()
-  const killRef = useRef(false)
-
-  const [userId, setUserId] = useState<string | null>(null)
 
   const [config, setConfig] = useState<TradingConfig>({
     max_loss: '-5000',
     max_orders: '10'
   })
 
-  const [currentPnL, setCurrentPnL] = useState(0)
-  const [orderCount, setOrderCount] = useState(0)
-  const [pnlHistory, setPnlHistory] = useState<PnlPoint[]>([])
-  const [killTriggeredToday, setKillTriggeredToday] = useState(false)
-  const [apiTokenExpired, setApiTokenExpired] = useState(false)
+  const [currentPnL] = useState(0)
+  const [orderCount] = useState(0)
+  const [pnlHistory] = useState<PnlPoint[]>([])
+  const [killTriggeredToday] = useState(false)
 
   const todayISO = new Date().toLocaleDateString('en-CA')
-  const isLockedToday = config.daily_lock_date?.slice(0, 10) === todayISO
+  const isLockedToday =
+    config.daily_lock_date?.slice(0, 10) === todayISO
 
-  /* ================= LOAD ================= */
+  /* ================= LOAD USER + CONFIG ================= */
 
   const loadUserAndConfig = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+
     if (!user) {
       router.push('/login')
       return
     }
 
-    setUserId(user.id)
-
     const { data } = await supabase
       .from('trading_configs')
-      .select('*')
+      .select('max_loss, max_orders, daily_lock_date')
       .eq('user_id', user.id)
       .single()
 
@@ -164,23 +159,14 @@ export default function Dashboard() {
             Daily Risk Limits
           </h3>
 
-          <Input
-            label="Max Loss (₹)"
-            value={config.max_loss}
-            disabled
-          />
-
-          <Input
-            label="Max Orders"
-            value={config.max_orders}
-            disabled
-          />
+          <Input label="Max Loss (₹)" value={config.max_loss} disabled />
+          <Input label="Max Orders" value={config.max_orders} disabled />
 
           <button
             disabled
             className="w-full mt-4 py-3 rounded-xl bg-slate-200 text-slate-600 font-semibold cursor-not-allowed"
           >
-            Locked for Today
+            {isLockedToday ? 'Locked for Today' : 'Locked'}
           </button>
         </Card>
       </div>
