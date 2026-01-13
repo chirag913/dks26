@@ -61,6 +61,7 @@ export default function Dashboard() {
   const [killTriggeredToday] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  /** 🔑 THIS WAS MISSING (BUG FIX #1) */
   const lockedToday =
     config.daily_lock_date?.slice(0, 10) === todayISO()
 
@@ -86,14 +87,14 @@ export default function Dashboard() {
 
     const unlock = shouldUnlock(data.daily_lock_date)
 
-    // Update local state
+    // ✅ Reset lock locally if old
     setConfig({
       max_loss: String(data.max_loss),
       max_orders: String(data.max_orders),
       daily_lock_date: unlock ? null : data.daily_lock_date
     })
 
-    // Persist midnight reset (IMPORTANT)
+    // ✅ Persist midnight reset in DB
     if (unlock && data.daily_lock_date) {
       await supabase
         .from('trading_configs')
@@ -147,7 +148,7 @@ export default function Dashboard() {
               Risk Control Center
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Daily risk limits reset at midnight
+              Daily limits reset automatically at midnight
             </p>
           </div>
 
@@ -171,11 +172,7 @@ export default function Dashboard() {
 
         {/* STATS */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <Stat
-            label="Current P&L"
-            value={`₹${currentPnL.toFixed(2)}`}
-            accent={currentPnL < 0 ? 'red' : 'green'}
-          />
+          <Stat label="Current P&L" value={`₹${currentPnL.toFixed(2)}`} />
           <Stat label="Orders Executed" value={orderCount} />
           <Stat
             label="Kill Switch"
