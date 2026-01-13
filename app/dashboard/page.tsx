@@ -30,6 +30,19 @@ type PnlPoint = {
   pnl: number
 }
 
+/* ================= HELPERS ================= */
+
+// YYYY-MM-DD (local)
+function todayISO() {
+  return new Date().toLocaleDateString('en-CA')
+}
+
+// Returns true if lock belongs to a previous day
+function shouldUnlock(lockDate?: string | null) {
+  if (!lockDate) return true
+  return lockDate.slice(0, 10) !== todayISO()
+}
+
 /* ================= COMPONENT ================= */
 
 export default function Dashboard() {
@@ -38,19 +51,20 @@ export default function Dashboard() {
 
   const [config, setConfig] = useState<TradingConfig>({
     max_loss: '-5000',
-    max_orders: '10'
+    max_orders: '10',
+    daily_lock_date: null
   })
 
   const [currentPnL] = useState(0)
   const [orderCount] = useState(0)
   const [pnlHistory] = useState<PnlPoint[]>([])
   const [killTriggeredToday] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const todayISO = new Date().toLocaleDateString('en-CA')
-  const isLockedToday =
-    config.daily_lock_date?.slice(0, 10) === todayISO
+  const lockedToday =
+    config.daily_lock_date?.slice(0, 10) === todayISO()
 
-  /* ================= LOAD USER + CONFIG ================= */
+  /* ================= LOAD & RESET ================= */
 
   const loadUserAndConfig = useCallback(async () => {
     const {
@@ -68,18 +82,57 @@ export default function Dashboard() {
       .eq('user_id', user.id)
       .single()
 
-    if (data) {
-      setConfig({
-        max_loss: String(data.max_loss),
-        max_orders: String(data.max_orders),
-        daily_lock_date: data.daily_lock_date
-      })
+    if (!data) return
+
+    const unlock = shouldUnlock(data.daily_lock_date)
+
+    // Update local state
+    setConfig({
+      max_loss: String(data.max_loss),
+      max_orders: String(data.max_orders),
+      daily_lock_date: unlock ? null : data.daily_lock_date
+    })
+
+    // Persist midnight reset (IMPORTANT)
+    if (unlock && data.daily_lock_date) {
+      await supabase
+        .from('trading_configs')
+        .update({ daily_lock_date: null })
+        .eq('user_id', user.id)
     }
   }, [])
 
   useEffect(() => {
     loadUserAndConfig()
   }, [])
+
+  /* ================= SAVE & LOCK ================= */
+
+  const handleSave = async () => {
+    if (lockedToday || saving) return
+    setSaving(true)
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser()
+    if (!user) return
+
+    await supabase
+      .from('trading_configs')
+      .update({
+        max_loss: Number(config.max_loss),
+        max_orders: Number(config.max_orders),
+        daily_lock_date: todayISO()
+      })
+      .eq('user_id', user.id)
+
+    setConfig(c => ({
+      ...c,
+      daily_lock_date: todayISO()
+    }))
+
+    setSaving(false)
+  }
 
   /* ================= UI ================= */
 
@@ -94,14 +147,14 @@ export default function Dashboard() {
               Risk Control Center
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              UI-based intraday protection
+              Daily risk limits reset at midnight
             </p>
           </div>
 
           <div className="flex items-center gap-2 rounded-full bg-emerald-100 px-4 py-2">
             <ShieldCheck className="h-4 w-4 text-emerald-700" />
             <span className="text-sm font-semibold text-emerald-800">
-              Monitoring
+              {lockedToday ? 'Locked' : 'Editable'}
             </span>
           </div>
         </div>
@@ -159,14 +212,34 @@ export default function Dashboard() {
             Daily Risk Limits
           </h3>
 
-          <Input label="Max Loss (₹)" value={config.max_loss} disabled />
-          <Input label="Max Orders" value={config.max_orders} disabled />
+          <Input
+            label="Max Loss (₹)"
+            value={config.max_loss}
+            disabled={lockedToday}
+            onChange={v =>
+              setConfig(c => ({ ...c, max_loss: v }))
+            }
+          />
+
+          <Input
+            label="Max Orders"
+            value={config.max_orders}
+            disabled={lockedToday}
+            onChange={v =>
+              setConfig(c => ({ ...c, max_orders: v }))
+            }
+          />
 
           <button
-            disabled
-            className="w-full mt-4 py-3 rounded-xl bg-slate-200 text-slate-600 font-semibold cursor-not-allowed"
+            disabled={lockedToday || saving}
+            onClick={handleSave}
+            className={`w-full mt-4 py-3 rounded-xl font-semibold transition ${
+              lockedToday
+                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                : 'bg-slate-900 text-white hover:bg-slate-800'
+            }`}
           >
-            {isLockedToday ? 'Locked for Today' : 'Locked'}
+            {lockedToday ? 'Locked for Today' : 'Save & Lock'}
           </button>
         </Card>
       </div>
@@ -215,11 +288,13 @@ function Stat({
 function Input({
   label,
   value,
-  disabled
+  disabled,
+  onChange
 }: {
   label: string
   value: string
   disabled?: boolean
+  onChange?: (v: string) => void
 }) {
   return (
     <div className="mb-4">
@@ -229,7 +304,12 @@ function Input({
       <input
         value={value}
         disabled={disabled}
-        className="w-full rounded-xl border border-slate-300 bg-slate-100 px-4 py-2 text-sm text-slate-700"
+        onChange={e => onChange?.(e.target.value)}
+        className={`w-full rounded-xl border px-4 py-2 text-sm ${
+          disabled
+            ? 'bg-slate-100 text-slate-500'
+            : 'border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-slate-900/10'
+        }`}
       />
     </div>
   )
