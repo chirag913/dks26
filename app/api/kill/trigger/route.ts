@@ -1,74 +1,69 @@
 // app/api/kill/trigger/route.ts
-import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import getDhanClientFactory from '@/lib/dhanServer'
-import { performCompleteKill } from '@/helpers/killHelpers'
+import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = await cookies()
+    const userId = req.headers.get("x-user-id")
 
-    const supabase = createServerComponentClient({
-      cookies: () => cookieStore
-    })
-
-    const body = await req.json().catch(() => ({}))
-    const reason = body?.reason ?? 'ui-trigger'
-
-    // 🔐 AUTHENTICATED USER (SOURCE OF TRUTH)
-    const { data: userData, error: authErr } =
-      await supabase.auth.getUser()
-
-    if (authErr || !userData?.user) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: "user_id missing" },
         { status: 401 }
       )
     }
 
-    const userId = userData.user.id
-
-    // 🔑 Fetch API key for THIS user only
+    // 🔐 Fetch user's broker API key
     const { data: cfg, error } = await supabase
-      .from('trading_configs')
-      .select('api_key')
-      .eq('user_id', userId)
+      .from("trading_configs")
+      .select("api_key")
+      .eq("user_id", userId)
       .single()
 
     if (error || !cfg?.api_key) {
       return NextResponse.json(
-        { error: 'API key not found for user' },
-        { status: 400 }
+        { error: "API key not found" },
+        { status: 401 }
       )
     }
 
-    const create = getDhanClientFactory()
-    const dhan = create(cfg.api_key)
+    const token = cfg.api_key
 
-    // 🔥 EXECUTE REAL KILL
-    const { final, trace } = await performCompleteKill(dhan, {
-      pauseMs: 2000,
-      retryFinal: 5,
-      backoffMs: 500
+    // 🛑 Call broker kill switch
+    const res = await fetch("https://api.dhan.co/v2/killswitch", {
+      method: "POST",
+      headers: {
+        "access-token": token
+      }
     })
 
-    // 🧾 LOG ENFORCEMENT
-    await supabase.from('kill_switch_logs').insert({
-      user_id: userId,
-      reason,
-      detail: { final, trace },
-      created_at: new Date().toISOString()
-    })
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: "Broker kill switch failed" },
+        { status: 500 }
+      )
+    }
+
+    // 🧾 Persist kill trigger for the day
+    await supabase
+      .from("trading_configs")
+      .update({
+        daily_lock_date: new Date().toISOString()
+      })
+      .eq("user_id", userId)
 
     return NextResponse.json({
-      ok: true,
-      enforced: final
+      success: true,
+      message: "Kill switch activated"
     })
-  } catch (err: any) {
-    console.error('[kill/trigger]', err)
+  } catch (err) {
     return NextResponse.json(
-      { error: err?.message ?? 'Internal error' },
+      { error: "Internal error" },
       { status: 500 }
     )
   }
