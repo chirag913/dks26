@@ -1,56 +1,75 @@
 // app/api/kill/trigger/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import getDhanClientFactory from "@/lib/dhanServer";
-import { performCompleteKill } from "@/helpers/killHelpers";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import getDhanClientFactory from '@/lib/dhanServer'
+import { performCompleteKill } from '@/helpers/killHelpers'
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const userId = body?.user_id;
+    const cookieStore = await cookies()
 
-    if (!userId) {
+    const supabase = createServerComponentClient({
+      cookies: () => cookieStore
+    })
+
+    const body = await req.json().catch(() => ({}))
+    const reason = body?.reason ?? 'ui-trigger'
+
+    // 🔐 AUTHENTICATED USER (SOURCE OF TRUTH)
+    const { data: userData, error: authErr } =
+      await supabase.auth.getUser()
+
+    if (authErr || !userData?.user) {
       return NextResponse.json(
-        { error: "user_id required" },
-        { status: 400 }
-      );
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { data: cfg } = await supabase
-      .from("trading_configs")
-      .select("api_key")
-      .eq("user_id", userId)
-      .single();
+    const userId = userData.user.id
 
-    if (!cfg?.api_key) {
+    // 🔑 Fetch API key for THIS user only
+    const { data: cfg, error } = await supabase
+      .from('trading_configs')
+      .select('api_key')
+      .eq('user_id', userId)
+      .single()
+
+    if (error || !cfg?.api_key) {
       return NextResponse.json(
-        { error: "API key not found" },
+        { error: 'API key not found for user' },
         { status: 400 }
-      );
+      )
     }
 
-    const dhan = getDhanClientFactory()(cfg.api_key);
+    const create = getDhanClientFactory()
+    const dhan = create(cfg.api_key)
 
-    const { final, trace } = await performCompleteKill(dhan);
+    // 🔥 EXECUTE REAL KILL
+    const { final, trace } = await performCompleteKill(dhan, {
+      pauseMs: 2000,
+      retryFinal: 5,
+      backoffMs: 500
+    })
 
-    await supabase.from("kill_switch_logs").insert({
+    // 🧾 LOG ENFORCEMENT
+    await supabase.from('kill_switch_logs').insert({
       user_id: userId,
-      trigger_reason: body.reason ?? "ui",
-      trigger_source: "ui",
+      reason,
       detail: { final, trace },
-      created_at: new Date().toISOString(),
-    });
+      created_at: new Date().toISOString()
+    })
 
-    return NextResponse.json({ ok: true, enforced: true });
-  } catch (e: any) {
+    return NextResponse.json({
+      ok: true,
+      enforced: final
+    })
+  } catch (err: any) {
+    console.error('[kill/trigger]', err)
     return NextResponse.json(
-      { error: e.message },
+      { error: err?.message ?? 'Internal error' },
       { status: 500 }
-    );
+    )
   }
 }
