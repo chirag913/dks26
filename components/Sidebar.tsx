@@ -16,7 +16,7 @@ import {
   User,
   Clock
 } from 'lucide-react'
-import { validateApiKey } from '@/utils/api'
+
 import SubscriptionModal from './SubscriptionModal'
 
 interface SidebarProps {
@@ -168,21 +168,29 @@ const res = await fetch('/api/subscription/check-status', {
   }
 })
 
-      const json = await res.json()
-      if (!res.ok) {
-        console.warn('check-status error', json)
-        setCanEditApi(false)
-        setStatus(null)
-        setSecondsLeft(null)
-        setEndDateIso(null)
-        return
-      }
+const text = await res.text()
 
-      // expected: { status, subscription, trading_config, can_edit_api, seconds_left, end_date, now }
-      setStatus(json.status ?? null)
-      setCanEditApi(Boolean(json.can_edit_api))
-      setSecondsLeft(typeof json.seconds_left === 'number' ? json.seconds_left : null)
-      setEndDateIso(json.end_date ?? null)
+let json: any
+try {
+  json = JSON.parse(text)
+} catch {
+  console.error('check-status returned non-JSON:', text)
+  setCanEditApi(false)
+  setStatus(null)
+  setSecondsLeft(null)
+  setEndDateIso(null)
+  return
+}
+
+if (!res.ok) {
+  console.warn('check-status error', json)
+  setCanEditApi(false)
+  setStatus(null)
+  setSecondsLeft(null)
+  setEndDateIso(null)
+  return
+}
+
 
       // server returned subscription row; update subscription displayed in the subscription panel
       if (json.subscription) {
@@ -219,34 +227,7 @@ const res = await fetch('/api/subscription/check-status', {
 
   // Fallback verification: try server proxy endpoint with x-dhan-token header.
   // This is pragmatic: many broker validate endpoints are flaky; this mirrors actual usage.
-  async function fallbackVerifyWithPositions(token: string) {
-    try {
-      const res = await fetch('/api/dhan/positions', {
-        method: 'GET',
-        headers: {
-          'x-dhan-token': token
-        }
-      })
-      if (res.ok) return true
-
-      // if status 401 or 498 -> invalid
-      if (res.status === 401 || res.status === 498) return false
-
-      // try to parse body for clues
-      const j = await res.json().catch(() => null)
-      const txt = JSON.stringify(j ?? '')
-      if (txt.includes('Invalid_Authentication') || txt.includes('DH-901') || txt.toLowerCase().includes('invalid')) {
-        return false
-      }
-
-      // otherwise treat as invalid (safer)
-      return false
-    } catch (e) {
-      // network or CORS — treat as failed verification
-      console.warn('fallbackVerifyWithPositions failed:', e)
-      return false
-    }
-  }
+ 
 
   const handleSaveApiKey = async (e?: React.FormEvent) => {
     if (e) {
@@ -261,21 +242,11 @@ const res = await fetch('/api/subscription/check-status', {
       const trimmed = apiKey.trim()
       if (!trimmed) throw new Error('API key cannot be empty')
 
-      // quick local validation (calls your utils/api.validateApiKey)
-      let isValid = await validateApiKey(trimmed)
+      // 🔐 only sanity check — DO NOT hit broker here
+if (trimmed.length < 40) {
+  throw new Error('Invalid API key format')
+}
 
-      // If initial validation returned false, attempt pragmatic fallback test
-      if (!isValid) {
-        const fallbackOk = await fallbackVerifyWithPositions(trimmed)
-        if (fallbackOk) {
-          isValid = true
-        } else {
-          // final: invalid token
-          throw new Error(
-            'Invalid API key — the broker rejected the token. If you are sure this token is correct, try regenerating it or contact Dhan support.'
-          )
-        }
-      }
 
       // get user token
       const { data: sessionData } = await supabase.auth.getSession()
@@ -291,7 +262,6 @@ const res = await fetch('/api/subscription/check-status', {
         },
         body: JSON.stringify({ api_key: trimmed })
       })
-      const json = await res.json()
       if (!res.ok) {
         throw new Error(json?.error ?? json?.message ?? 'Failed to save API key')
       }

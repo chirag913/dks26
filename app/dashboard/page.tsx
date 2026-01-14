@@ -90,7 +90,6 @@ export default function Dashboard() {
       daily_lock_date: unlock ? null : data.daily_lock_date
     })
 
-    // 🔁 Midnight reset (persisted)
     if (unlock && data.daily_lock_date) {
       await supabase
         .from('trading_configs')
@@ -106,22 +105,20 @@ export default function Dashboard() {
   /* ================= LIVE MONITOR ================= */
 
   const fetchLiveStats = useCallback(async () => {
+    // ⛔ STOP polling once kill is triggered
+    if (killInProgressRef.current) return
+
     try {
-      const {
-  data: { user }
-} = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-if (!user) return
+      const res = await fetch('/api/dhan/summary', {
+        headers: { 'x-user-id': user.id }
+      })
 
-const res = await fetch('/api/dhan/summary', {
-  headers: {
-    'x-user-id': user.id
-  }
-})
       if (!res.ok) return
 
       const data = await res.json()
-
       const pnl = Number(data.pnl ?? 0)
       const orders = Number(data.orders ?? 0)
 
@@ -133,7 +130,7 @@ const res = await fetch('/api/dhan/summary', {
         { time: new Date().toLocaleTimeString(), pnl }
       ])
 
-      // 🔥 ENFORCEMENT (REAL KILL SWITCH)
+      // 🔥 KILL SWITCH TRIGGER
       if (
         !killInProgressRef.current &&
         (pnl <= Number(config.max_loss) ||
@@ -142,36 +139,14 @@ const res = await fetch('/api/dhan/summary', {
         killInProgressRef.current = true
         setKillTriggeredToday(true)
 
-   const {
-  data: { user }
-} = await supabase.auth.getUser()
-
-if (!user) return
-
-await fetch('/api/kill/trigger', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-user-id': user.id
-  },
-  body: JSON.stringify({
-    pnl,
-    orders
-  })
-})
-
-
-await fetch('/api/dhan/killswitch', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'ACTIVATE',
-    accessToken: '<YOUR_DHAN_ACCESS_TOKEN>'
-  })
-})
-
-
-
+        await fetch('/api/kill/trigger', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': user.id
+          },
+          body: JSON.stringify({ pnl, orders })
+        })
       }
     } catch {
       // silent
@@ -357,17 +332,15 @@ function Input({
       <label className="block text-xs text-slate-500 uppercase mb-1">
         {label}
       </label>
-
       <input
         value={value}
         disabled={disabled}
         onChange={e => onChange?.(e.target.value)}
-        className={`w-full rounded-xl border px-4 py-2 text-sm
-          ${disabled
+        className={`w-full rounded-xl border px-4 py-2 text-sm ${
+          disabled
             ? 'bg-slate-100 text-black opacity-100 cursor-not-allowed'
             : 'bg-white text-black border-slate-300 focus:ring-2 focus:ring-slate-900/10'
-          }
-        `}
+        }`}
       />
     </div>
   )
