@@ -1,4 +1,3 @@
-// app/api/dhan/summary/route.ts
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
@@ -17,14 +16,30 @@ export async function GET(req: Request) {
     )
   }
 
-  // 🔑 Fetch user's Dhan API key
+  // 🔒 Fetch trading config INCLUDING kill switch
   const { data: cfg, error } = await supabase
     .from("trading_configs")
-    .select("api_key")
+    .select("api_key, kill_switch_active")
     .eq("user_id", userId)
     .single()
 
-  if (error || !cfg?.api_key) {
+  if (error || !cfg) {
+    return NextResponse.json(
+      { error: "Trading config not found" },
+      { status: 401 }
+    )
+  }
+
+  // 🛑 HARD KILL SWITCH ENFORCEMENT
+  if (cfg.kill_switch_active) {
+    return NextResponse.json({
+      pnl: 0,
+      orders: 0,
+      kill_switch: true
+    })
+  }
+
+  if (!cfg.api_key) {
     return NextResponse.json(
       { error: "API key not found" },
       { status: 401 }

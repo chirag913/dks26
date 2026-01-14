@@ -142,18 +142,36 @@ const res = await fetch('/api/dhan/summary', {
         killInProgressRef.current = true
         setKillTriggeredToday(true)
 
-        await fetch('/api/kill/trigger', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reason:
-              pnl <= Number(config.max_loss)
-                ? 'MAX_LOSS'
-                : 'MAX_ORDERS',
-            pnl,
-            orders
-          })
-        })
+   const {
+  data: { user }
+} = await supabase.auth.getUser()
+
+if (!user) return
+
+await fetch('/api/kill/trigger', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-user-id': user.id
+  },
+  body: JSON.stringify({
+    pnl,
+    orders
+  })
+})
+
+
+await fetch('/api/dhan/killswitch', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'ACTIVATE',
+    accessToken: '<YOUR_DHAN_ACCESS_TOKEN>'
+  })
+})
+
+
+
       }
     } catch {
       // silent

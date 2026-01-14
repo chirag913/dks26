@@ -1,0 +1,5 @@
+[functions.monitor-killswitch]
+verify_jwt = false
+
+[functions.monitor-killswitch.schedule]
+cron = "*/1 * * * *"
