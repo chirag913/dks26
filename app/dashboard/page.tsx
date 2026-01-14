@@ -107,7 +107,17 @@ export default function Dashboard() {
 
   const fetchLiveStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/dhan/summary')
+      const {
+  data: { user }
+} = await supabase.auth.getUser()
+
+if (!user) return
+
+const res = await fetch('/api/dhan/summary', {
+  headers: {
+    'x-user-id': user.id
+  }
+})
       if (!res.ok) return
 
       const data = await res.json()
