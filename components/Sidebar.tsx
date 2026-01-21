@@ -255,16 +255,33 @@ if (trimmed.length < 40) {
 
       // POST to server route that enforces subscription rules
       const res = await fetch('/api/trading-config/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ api_key: trimmed })
-      })
-      if (!res.ok) {
-        throw new Error(json?.error ?? json?.message ?? 'Failed to save API key')
-      }
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`
+  },
+  body: JSON.stringify({ api_key: trimmed })
+})
+
+// ✅ SAFE parsing (prevents HTML / 500 crashes)
+let data: any = null
+const text = await res.text()
+
+if (text) {
+  try {
+    data = JSON.parse(text)
+  } catch {
+    data = null
+  }
+}
+
+if (!res.ok) {
+  throw new Error(
+    data?.error ??
+    data?.message ??
+    'Failed to save API key'
+  )
+}
 
       // succeeded
       setSavedApiKey(trimmed)
