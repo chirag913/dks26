@@ -1,4 +1,6 @@
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -29,63 +31,59 @@ export async function POST(req: Request) {
       )
     }
 
-    /* =====================
-       1️⃣ Fetch config
-       ===================== */
-    const { data: cfg, error: cfgErr } = await supabase
+    const { data: cfg, error } = await supabase
       .from('trading_configs')
       .select('api_key, kill_switch_active')
       .eq('user_id', user_id)
       .single()
 
-    if (cfgErr || !cfg?.api_key) {
+    if (error || !cfg?.api_key) {
       return NextResponse.json(
         { error: 'Invalid trading config' },
         { status: 500 }
       )
     }
 
-    // Idempotency guard
     if (cfg.kill_switch_active) {
-      return NextResponse.json({
-        ok: true,
-        alreadyActive: true
-      })
+      return NextResponse.json({ ok: true, alreadyActive: true })
     }
 
     const headers = { 'access-token': cfg.api_key }
+
     const ACTIVATE =
       'https://api.dhan.co/v2/killswitch?killSwitchStatus=ACTIVATE'
     const DEACTIVATE =
       'https://api.dhan.co/v2/killswitch?killSwitchStatus=DEACTIVATE'
 
-    /* =====================
-       2️⃣ RETRY LOOP
-       ===================== */
     let lastError: any = null
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        // ACTIVATE (1)
-        let res = await fetch(ACTIVATE, { method: 'POST', headers })
-        let text = await res.text()
-        if (!res.ok) throw new Error(`ACTIVATE-1 failed: ${text}`)
+        let res = await fetch(ACTIVATE, {
+          method: 'POST',
+          headers,
+          cache: 'no-store'
+        })
+        if (!res.ok) throw new Error(await res.text())
 
         await sleep(STEP_DELAY_MS)
 
-        // DEACTIVATE
-        res = await fetch(DEACTIVATE, { method: 'POST', headers })
-        text = await res.text()
-        if (!res.ok) throw new Error(`DEACTIVATE failed: ${text}`)
+        res = await fetch(DEACTIVATE, {
+          method: 'POST',
+          headers,
+          cache: 'no-store'
+        })
+        if (!res.ok) throw new Error(await res.text())
 
         await sleep(STEP_DELAY_MS)
 
-        // ACTIVATE (FINAL)
-        res = await fetch(ACTIVATE, { method: 'POST', headers })
-        text = await res.text()
-        if (!res.ok) throw new Error(`ACTIVATE-2 failed: ${text}`)
+        res = await fetch(ACTIVATE, {
+          method: 'POST',
+          headers,
+          cache: 'no-store'
+        })
+        if (!res.ok) throw new Error(await res.text())
 
-        // ✅ SUCCESS → persist state
         await supabase
           .from('trading_configs')
           .update({
@@ -97,7 +95,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
           ok: true,
           attempt,
-          message: 'Kill switch locked for the day'
+          message: 'Kill switch activated'
         })
 
       } catch (err: any) {
@@ -109,10 +107,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      {
-        error: 'Kill switch failed after multiple attempts',
-        details: lastError
-      },
+      { error: 'Kill switch failed', details: lastError },
       { status: 500 }
     )
 

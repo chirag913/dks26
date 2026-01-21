@@ -76,11 +76,16 @@ export default function Dashboard() {
 
     const { data } = await supabase
       .from('trading_configs')
-      .select('max_loss, max_orders, daily_lock_date')
+      .select('max_loss, max_orders, daily_lock_date, kill_switch_active')
       .eq('user_id', user.id)
       .single()
 
     if (!data) return
+
+    if (data.kill_switch_active) {
+      setKillTriggeredToday(true)
+      killInProgressRef.current = true
+    }
 
     const unlock = shouldUnlock(data.daily_lock_date)
 
@@ -105,9 +110,6 @@ export default function Dashboard() {
   /* ================= LIVE MONITOR ================= */
 
   const fetchLiveStats = useCallback(async () => {
-    // ⛔ STOP polling once kill is triggered
-    if (killInProgressRef.current) return
-
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -119,6 +121,14 @@ export default function Dashboard() {
       if (!res.ok) return
 
       const data = await res.json()
+
+      // 🛑 Backend kill already active
+      if (data.kill_switch) {
+        setKillTriggeredToday(true)
+        killInProgressRef.current = true
+        return
+      }
+
       const pnl = Number(data.pnl ?? 0)
       const orders = Number(data.orders ?? 0)
 
@@ -145,9 +155,14 @@ export default function Dashboard() {
             'Content-Type': 'application/json',
             'x-user-id': user.id
           },
-          body: JSON.stringify({ pnl, orders })
+          body: JSON.stringify({
+            user_id: user.id,
+            pnl,
+            orders
+          })
         })
       }
+
     } catch {
       // silent
     }
@@ -186,7 +201,6 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-50 px-6 py-10">
       <div className="max-w-6xl mx-auto space-y-8">
 
-        {/* HEADER */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">
@@ -214,7 +228,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* STATS */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <Stat
             label="Current P&L"
@@ -229,12 +242,11 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* CHART */}
         <Card>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={pnlHistory}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis />
+              <XAxis dataKey="time" />
               <YAxis />
               <Tooltip />
               <ReferenceLine
@@ -248,7 +260,6 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </Card>
 
-        {/* LIMITS */}
         <Card>
           <Input
             label="Max Loss (₹)"
