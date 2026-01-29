@@ -76,16 +76,11 @@ export default function Dashboard() {
 
     const { data } = await supabase
       .from('trading_configs')
-      .select('max_loss, max_orders, daily_lock_date, kill_switch_active')
+      .select('max_loss, max_orders, daily_lock_date')
       .eq('user_id', user.id)
       .single()
 
     if (!data) return
-
-    if (data.kill_switch_active) {
-      setKillTriggeredToday(true)
-      killInProgressRef.current = true
-    }
 
     const unlock = shouldUnlock(data.daily_lock_date)
 
@@ -162,7 +157,6 @@ export default function Dashboard() {
           })
         })
       }
-
     } catch {
       // silent
     }
